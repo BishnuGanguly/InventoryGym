@@ -756,6 +756,9 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
     start_text = template_text(TEMPLATE_PHARMA)
     start_world = PHARMA_WORLD
     start_task = "flu_season" if "flu_season" in start_world.tasks else start_world.task_names[0]
+    # The tables start with the world's values. They are not filled by a page-load event:
+    # that made the page freeze in an endless update loop (Svelte effect_update_depth_exceeded).
+    initial = forms.world_to_tables(yaml.safe_load(start_text))
 
     with gr.Blocks(title="InventoryGym") as demo:
         gr.HTML(STYLE + INTRO)
@@ -774,18 +777,18 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 with gr.Tabs():
                     with gr.Tab("Tables"):
                         with gr.Row():
-                            f_name = gr.Textbox(label="World name", scale=1)
-                            f_business = gr.Textbox(label="Whose inventory is it? (used in the LLM's prompt)", scale=2)
-                            f_days = gr.Number(label="Days in an episode", precision=0, scale=1)
-                        f_storage = gr.Dataframe(headers=forms.STORAGE_COLUMNS, label="Storage pools", interactive=True,
+                            f_name = gr.Textbox(label="World name", value=initial["name"], scale=1)
+                            f_business = gr.Textbox(label="Whose inventory is it? (used in the LLM's prompt)", value=initial["business"], scale=2)
+                            f_days = gr.Number(label="Days in an episode", value=initial["days"], precision=0, scale=1)
+                        f_storage = gr.Dataframe(value=pd.DataFrame(initial["storage"], columns=forms.STORAGE_COLUMNS), headers=forms.STORAGE_COLUMNS, label="Storage pools", interactive=True,
                                                  row_count=2, column_count=(len(forms.STORAGE_COLUMNS), "fixed"), wrap=True)
-                        f_products = gr.Dataframe(headers=forms.PRODUCT_COLUMNS, label="Products (amounts: a number, or a range like 80-120 drawn per seed)",
+                        f_products = gr.Dataframe(value=pd.DataFrame(initial["products"], columns=forms.PRODUCT_COLUMNS), headers=forms.PRODUCT_COLUMNS, label="Products (amounts: a number, or a range like 80-120 drawn per seed)",
                                                   interactive=True, row_count=3,
                                                   column_count=(len(forms.PRODUCT_COLUMNS), "fixed"), wrap=True)
-                        f_tasks = gr.Dataframe(headers=forms.TASK_COLUMNS, label="Tasks (the same inventory under different events)",
+                        f_tasks = gr.Dataframe(value=pd.DataFrame(initial["tasks"], columns=forms.TASK_COLUMNS), headers=forms.TASK_COLUMNS, label="Tasks (the same inventory under different events)",
                                                interactive=True, row_count=2,
                                                column_count=(len(forms.TASK_COLUMNS), "fixed"), wrap=True)
-                        f_events = gr.Dataframe(headers=forms.EVENT_COLUMNS, label="Events", interactive=True,
+                        f_events = gr.Dataframe(value=pd.DataFrame(initial["events"], columns=forms.EVENT_COLUMNS), headers=forms.EVENT_COLUMNS, label="Events", interactive=True,
                                                 row_count=2, column_count=(len(forms.EVENT_COLUMNS), "fixed"), wrap=True)
                         gr.Markdown(forms.EVENT_HELP)
                         apply_tables = gr.Button("Use these tables", variant="primary")
@@ -913,7 +916,6 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
         apply_file.click(use_text, inputs=editor, outputs=world_outputs)
         apply_tables.click(on_apply_tables, inputs=[world_text, *table_parts],
                            outputs=[world_text, summary, editor, *selectors])
-        demo.load(lambda: _tables_update(yaml.safe_load(start_text)), outputs=table_parts)
 
         def on_preview(text: str, task_name: str, seed_value):
             try:
