@@ -474,6 +474,41 @@ def _read(path: Path) -> Any:
         raise WorldError(f"{path} is not valid {'JSON' if path.suffix.lower() == '.json' else 'YAML'}: {exc}") from None
 
 
+# Limits for worlds that arrive as text from someone else (the dashboard's editor and
+# uploads): large enough for any real inventory, small enough that one request cannot
+# tie up a shared server.
+MAX_TEXT_BYTES = 100_000
+MAX_TEXT_PRODUCTS = 30
+MAX_TEXT_DAYS = 180
+MAX_TEXT_TASKS = 20
+
+
+def load_world_text(text: str, label: str = "your world") -> World:
+    """
+    A World from YAML (or JSON) text, e.g. typed into an editor or uploaded. Parsed with
+    the safe loader, checked like a world file, and refused beyond the MAX_TEXT_* limits.
+    """
+    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
+        raise WorldError(f"{label} is larger than {MAX_TEXT_BYTES // 1000} kB")
+    if not text.strip():
+        raise WorldError(f"{label} is empty")
+    try:
+        data = yaml.load(text, Loader=_UniqueKeyLoader)
+    except yaml.YAMLError as exc:
+        raise WorldError(f"{label} is not valid YAML: {exc}") from None
+    if not isinstance(data, dict):
+        raise WorldError(f"{label} must contain a mapping (name, days, storage, products, tasks)")
+    try:
+        world = World.model_validate(data)
+    except ValidationError as exc:
+        raise WorldError(_format_errors(exc, label)) from None
+    for count, limit, what in ((len(world.products), MAX_TEXT_PRODUCTS, "products"),
+                               (world.days, MAX_TEXT_DAYS, "days"), (len(world.tasks), MAX_TEXT_TASKS, "tasks")):
+        if count > limit:
+            raise WorldError(f"{label} has {count} {what}; the most allowed here is {limit}")
+    return world
+
+
 def _format_errors(exc: ValidationError, source: str) -> str:
     lines = [f"{source} is not a valid world:"]
     for err in exc.errors():

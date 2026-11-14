@@ -25,19 +25,23 @@ ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
 ```
 
 
-## Live dashboard (Custom tab)
+## Dashboard
 
-Next to the Playground, `/web` has a **Custom** tab that plays a whole episode and redraws charts after every simulated day:
+The dashboard is served at `/dashboard` (the address the Hugging Face Space opens) and is also the **Custom** tab next to the Playground at `/web`. It has three steps:
 
-- **Pick** a task, a seed and an agent, then press **Run episode** (**Stop** cancels).
-- **Agents:**
-  - *Baseline*: a simple order-up-to rule. It needs no API key and finishes in seconds.
-  - *LLM agent*: uses the same prompt and action history as `inference.py`, one model call per day, so a 60-day episode makes 60 calls and takes about 1–5 minutes.
-- **Charts:** stock on hand vs. demand, true lead time vs. the agent's estimate, orders and deliveries, step reward, and unmet demand for every SKU and day. **Orange lines are hidden ground truth the agent never sees**, so you can judge its decisions.
-- **Tables:** every agent decision (the model's raw reply and the orders accepted), plus a per-day data table for the selected SKU.
+1. **Your inventory.** Pick a starting point (the pharma world, the grocery example or a blank starter) and change it:
+   - **Tables** for storage pools, products, tasks and events. Amounts and days are a number or a range such as `80-120`, drawn per seed. An event's product can be a product id, `any` (a different product each seed) or `milk|rice` (one of these).
+   - **File** for everything a world file can hold (per-task storage, draws shared by several events, the words news uses), or **upload** a `.yaml` file.
+   - A card says whether the inventory is valid and, if not, what is wrong and where. **Preview a task** draws what the task does to each product and lists the news it would produce.
+2. **Run an episode.** Choose a task, a seed, the news level and an agent, then **Run episode** (**Stop** cancels).
+   - **Agents:** the baseline rule, the two news references (`news_plan`, `baseline_news`), the oracle, "order nothing", and two LLM agents: one that adjusts the baseline's orders, and a hybrid that only reads the news.
+   - **Charts, redrawn every simulated day:** the score so far against the baseline and the oracle on the same episode; how full each storage pool is, with wasted deliveries marked; the news feed; and for the chosen product, stock against demand, lead times and orders. **Orange is hidden truth the agent never sees**: shaded bands are the days of a disruption, and a dotted line marks the day it was announced.
+   - At the end a line says how much of the gap between the baseline and the oracle the agent closed.
+3. **Compare agents.** Several agents on the same test seeds of one task: mean score with a 95% interval, the difference to the baseline seed by seed, and the share of the gap to the oracle closed. LLM agents run at most 3 episodes here.
 
-To use the LLM agent on the Hugging Face Space, add your token as a **Secret** named `HF_TOKEN` (Space → Settings → Variables and secrets), or paste a token under *LLM settings* for a single run. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against that account's credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. Each run uses its own environment, and runs are queued one at a time.
+**LLM agents.** On the Space, add your token as a **Secret** named `HF_TOKEN` (Space → Settings → Variables and secrets), or paste a token under *LLM settings* for a single run. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against that account's credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. A token is used for the run only and is never stored.
 
+**Limits.** A world typed or uploaded in the dashboard is parsed with the safe YAML loader and may have at most 30 products, 20 tasks, 180 days and 100 kB. The server never opens a file path sent from the browser. Each run builds its own environment, so viewers never share an episode.
 
 ## Choosing a task on reset
 

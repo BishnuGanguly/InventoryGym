@@ -6,7 +6,7 @@ colorTo: green
 sdk: docker
 pinned: false
 app_port: 8000
-base_path: /web
+base_path: /dashboard
 tags:
   - openenv
 ---
@@ -212,12 +212,15 @@ Training has not yet been run end to end since the warm start was added, and it 
 
 ```bash
 ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
-# open http://localhost:8000/web
+# open http://localhost:8000/dashboard
 ```
 
+- **Dashboard** (`/dashboard`, the page the Space opens), in three steps:
+  1. **Your inventory**: start from the pharma world, the grocery example or a blank starter, and edit storage, products, tasks and events in tables, or edit or upload the world file. Mistakes are explained in place, and a preview shows what a task does and the news it produces.
+  2. **Run an episode**: any task, with or without news, played by a rule agent, a reference agent or an LLM (your token, any model the endpoint serves). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the news feed, stock, lead times and orders per product, with the hidden truth in orange.
+  3. **Compare agents**: several agents on the same seeds, with intervals and the share of the gap to the oracle each closes.
 - **API**: `/reset`, `/step`, `/state`, `/schema` and a WebSocket, following OpenEnv. [`client.py`](client.py) is the Python client.
-- **Playground** (`/web`): reset and step an episode by hand.
-- **Dashboard** (the *Custom* tab): plays a whole episode with the baseline or an LLM and redraws charts every day, including the hidden demand and lead times, so you can judge each decision.
+- **Playground** (`/web`): reset and step an episode by hand; the dashboard is also its *Custom* tab.
 - **Docker / Hugging Face Space**: the `Dockerfile` builds the server with the web interface on; the front matter of this file configures the Space.
 
 ```python
@@ -255,7 +258,8 @@ InventoryGym/
 ├── server/
 │   ├── my_env_environment.py   # The simulation
 │   ├── app.py                  # OpenEnv server (FastAPI)
-│   └── dashboard.py            # The live dashboard
+│   ├── dashboard.py            # The dashboard: your inventory, run, compare
+│   └── world_forms.py          # A world as editable tables, for the dashboard
 ├── tasks.py               # The pharma tasks' random scenarios, seeds, scoring
 ├── news.py                # News about a task's disruptions
 ├── agents.py              # Reference agents and LLM agents
@@ -277,6 +281,6 @@ uv run --extra dev python -m pytest tests     # about a minute
 InventoryGym grew out of a pharma cold-chain benchmark, and some parts still show it:
 
 - **Names in the code.** The classes are still `PharmaEnvironment`, `PharmaAction` and `PharmaEnvClient`, and the package is `openenv-my_env`. Renaming them, with the old names kept working, is planned.
-- **Pharma only, for now**: training (`training/`), the local LLM runner and the dashboard run the pharma world's tasks. `eval.py`, every agent, news and prompts work on any world.
+- **Pharma only, for now**: training (`training/`) and the local LLM runner run the pharma world's tasks. `eval.py`, the dashboard, every agent, news and prompts work on any world.
 - **The pharma world keeps its original prompts and news wording**, so published results and trained models stay valid. Every other world, including an edited copy of `pharma.yaml`, gets prompts and news written from its file.
 - **Not there yet**: continuous integration, a single command-line tool, and a licence file.
