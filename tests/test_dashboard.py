@@ -93,3 +93,56 @@ def test_rendering_works_before_and_after_a_run():
 
 def test_build_dashboard_returns_blocks():
     assert isinstance(build_dashboard(None, None, None, False, "pharma_env", ""), gr.Blocks)
+
+
+# ---------------------------------------------------------------------------
+# Any world, the form and the comparison
+# ---------------------------------------------------------------------------
+
+import yaml  # noqa: E402
+
+from server import dashboard as D  # noqa: E402
+from server import world_forms as forms  # noqa: E402
+from world import load_world  # noqa: E402
+
+
+@pytest.mark.parametrize("template", D.TEMPLATES)
+def test_templates_are_valid_worlds_and_survive_the_tables(template):
+    text = D.template_text(template)
+    data = yaml.safe_load(text)
+    world = D.parse_world(text)
+    assert load_world(forms.tables_to_world(data, forms.world_to_tables(data))) == world
+    assert "is ready" in D.world_summary_html(world)
+    assert D.is_builtin(world) == (template == D.TEMPLATE_PHARMA)
+
+
+def test_table_mistakes_are_explained():
+    tables = forms.world_to_tables(forms.starter_world())
+    tables["products"][0][3] = "lots"
+    with pytest.raises(forms.FormError, match=r"Products, row 1 \(milk\), 'Daily demand': 'lots' is not a number"):
+        forms.tables_to_world(None, tables)
+    assert "cannot be used yet" in D.world_summary_html(None, "something is wrong")
+
+
+def test_an_episode_of_another_world_draws_every_chart():
+    world = D.parse_world(D.template_text(D.TEMPLATE_GROCERY))
+    agent = D.make_agent(D.AGENT_NEWS_PLAN)
+    trace = last(run_episode("surprise_disruptions", 10000, agent, world=world, news=2))
+    trace.references = D.reference_curves("surprise_disruptions", 10000, world, 2, "fixed")
+    assert trace.finished and set(trace.rows[0]["storage"]) == {"fridge", "freezer", "shelf"}
+    assert any(r["new_news"] for r in trace.rows)
+    for figure in (D.score_figure(trace), D.storage_figure(trace), D.preview_figure(trace.config), unmet_heatmap(trace)):
+        assert figure.data
+    render_detail(trace, D.focus_product(trace.config))
+    assert "ig-news-item" in D.news_html(trace) and "Against the baseline" in kpi_html(trace)
+    assert "Final score" in D.verdict_html(trace, D.AGENT_NEWS_PLAN)
+    baseline, oracle = trace.references["Baseline"][-1], trace.references["Oracle"][-1]
+    assert baseline < score_so_far(trace) < oracle
+
+
+def test_comparison_table_pairs_agents_with_the_baseline():
+    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_NEWS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
+    assert list(table["Agent"]) == [D.AGENT_ORACLE, D.AGENT_NEWS_PLAN, D.AGENT_BASELINE]
+    plan = table[table["Agent"] == D.AGENT_NEWS_PLAN].iloc[0]
+    assert plan["vs baseline"].startswith("+0.0400") and plan["Gap to oracle closed"] == "40%"
+    assert D.comparison_figure(table).data

@@ -20,7 +20,7 @@ Usage:
 """
 
 #from OpenEnv.envs.browsergym_env import models
-from pathlib import Path
+import os
 import sys
 from pathlib import Path
 
@@ -63,6 +63,15 @@ app = create_app(
     max_concurrent_envs=1,
     gradio_builder=build_dashboard,
 )
+
+
+# The dashboard as a page of its own, at /dashboard: the address the Hugging Face Space
+# opens (base_path in README.md). It is also the "Custom" tab next to the Playground at /web.
+DASHBOARD_PATH = "/dashboard"
+if os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in ("true", "1", "yes"):
+    import gradio as gr
+
+    app = gr.mount_gradio_app(app, build_dashboard(), path=DASHBOARD_PATH, theme=gr.themes.Soft())
 
 
 def main():
