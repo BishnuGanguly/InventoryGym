@@ -70,6 +70,17 @@ app = create_app(
 DASHBOARD_PATH = "/dashboard"
 if os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in ("true", "1", "yes"):
     import gradio as gr
+    from fastapi import Request
+    from fastapi.responses import RedirectResponse
+
+    @app.get(DASHBOARD_PATH, include_in_schema=False)
+    async def dashboard_without_slash(request: Request):
+        # A relative redirect that keeps the query string. The automatic one is an absolute
+        # address built from the proxy's forwarded headers, and when a hop on the way says
+        # "http" it points to http://..., which a page opened over https blocks inside its
+        # iframe: the Space page then stays white although the dashboard itself works.
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(url=f"{DASHBOARD_PATH}/{query}")
 
     app = gr.mount_gradio_app(app, build_dashboard(), path=DASHBOARD_PATH, theme=gr.themes.Soft())
 
