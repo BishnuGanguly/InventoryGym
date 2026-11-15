@@ -216,7 +216,7 @@ ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
 ```
 
 - **Dashboard** (`/dashboard`, the page the Space opens), in three steps:
-  1. **Your inventory**: start from the pharma world, the grocery example or a blank starter, and edit storage, products, tasks and events in tables, or edit or upload the world file. Mistakes are explained in place, and a preview shows what a task does and the news it produces.
+  1. **Your inventory**: build your own in the **Quick builder**, in plain words: one row per product (what it sells per day, how many days a delivery takes, whether it needs a fridge, how bad it is to run out), then what should go wrong in the practice runs and how badly. Or start from the pharma world or the grocery example. Fine-tune in tables or in the world file itself, or upload one. Mistakes are explained in place, and a preview shows what a task does and the news it produces.
   2. **Run an episode**: any task, with or without news, played by a rule agent, a reference agent or an LLM (your token, any model the endpoint serves). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the news feed, stock, lead times and orders per product, with the hidden truth in orange.
   3. **Compare agents**: several agents on the same seeds, with intervals and the share of the gap to the oracle each closes.
 - **API**: `/reset`, `/step`, `/state`, `/schema` and a WebSocket, following OpenEnv. [`client.py`](client.py) is the Python client.

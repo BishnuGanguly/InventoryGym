@@ -146,3 +146,34 @@ def test_comparison_table_pairs_agents_with_the_baseline():
     plan = table[table["Agent"] == D.AGENT_NEWS_PLAN].iloc[0]
     assert plan["vs baseline"].startswith("+0.0400") and plan["Gap to oracle closed"] == "40%"
     assert D.comparison_figure(table).data
+
+
+# ---------------------------------------------------------------------------
+# The quick builder, as wired into the page
+# ---------------------------------------------------------------------------
+
+from server import world_wizard as W  # noqa: E402
+from world import load_world_text  # noqa: E402
+
+
+def _create_inventory():
+    demo = build_dashboard(None, None, None, False, "x", "")
+    return next(f for f in demo.fns.values() if getattr(f, "api_name", None) == "create_inventory").fn
+
+
+def test_quick_builder_button_creates_an_inventory_for_the_whole_page():
+    ok = _create_inventory()("Corner Bakery", "a neighbourhood bakery", 60, W.starter_rows(), 21, 14, W.SCENARIO_CHOICES, "Severe")
+    world_text, summary, editor = ok[0], ok[1], ok[2]
+    world = load_world_text(world_text)
+    assert world.name == "corner_bakery" and world.days == 60 and editor == world_text
+    assert "corner_bakery is ready" in summary and "is ready" in ok[-1]
+    assert not D.is_builtin(world)
+
+
+def test_quick_builder_mistakes_keep_the_current_inventory_and_say_what_to_fix():
+    create = _create_inventory()
+    ok = create("shop", "a shop", 45, W.starter_rows(), 21, 14, W.SCENARIO_CHOICES, "Medium")
+    bad = create("shop", "a shop", 45, [["milk", 10, 1, True, "high"]], 21, 14, W.SCENARIO_CHOICES, "Medium")
+    assert len(bad) == len(ok)
+    assert "Add at least 2 products" in bad[-1] and bad[-1].startswith("⚠️")
+    assert all(item == gr.skip() for item in bad[:-1])              # nothing else on the page changes

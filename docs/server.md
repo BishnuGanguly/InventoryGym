@@ -29,7 +29,13 @@ ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
 
 The dashboard is served at `/dashboard` (the address the Hugging Face Space opens) and is also the **Custom** tab next to the Playground at `/web`. It has three steps:
 
-1. **Your inventory.** Pick a starting point (the pharma world, the grocery example or a blank starter) and change it:
+1. **Your inventory.** Build your own, or pick a starting point (the pharma world, the grocery example or a blank starter) and change it:
+   - **Quick builder** (no knowledge of world files needed). Give a name and the kind of business, then fill one row per product in plain words: *Sells per day*, *Delivery takes (days)*, *Needs a fridge* (a checkbox) and *If we run out* (`low`, `medium`, `high` or `critical`: how bad a shortage is). Choose what should go wrong in the practice runs (calm weeks, a supplier slowing down, demand jumping for one product, or both at once) and how bad (mild, medium or severe), then press **Create my inventory**. The builder turns your answers into a world file:
+     - demand is ±20% around what you typed, delivery time ±25%, and starting stock is two to four days of sales;
+     - a shortage costs 5, 20, 50 or 100 for `low` to `critical`;
+     - a shelf and, if any product needs one, a fridge are created, with room (in days of sales) set under *Storage room*;
+     - each chosen trouble becomes a task in which the product that is hit and the timing are drawn per seed, so no fixed timetable works and reading the news pays.
+     A problem (such as fewer than two products, or a delivery time too long for the episode) is shown next to the button, in words, and the inventory in use stays as it was. The result opens in **Tables** and **File** for fine-tuning.
    - **Tables** for storage pools, products, tasks and events. Amounts and days are a number or a range such as `80-120`, drawn per seed. An event's product can be a product id, `any` (a different product each seed) or `milk|rice` (one of these).
    - **File** for everything a world file can hold (per-task storage, draws shared by several events, the words news uses), or **upload** a `.yaml` file.
    - A card says whether the inventory is valid and, if not, what is wrong and where. **Preview a task** draws what the task does to each product and lists the news it would produce.
