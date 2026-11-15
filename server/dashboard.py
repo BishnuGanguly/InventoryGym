@@ -3,7 +3,8 @@ The InventoryGym dashboard: describe an inventory, watch an agent run it, compar
 
 Three steps on one page:
 
-1. Your inventory  - start from a built-in world, an example or a blank starter; edit
+1. Your inventory  - build one in plain words in the quick builder, or start from a built-in
+                     world, an example or a blank starter; edit
                      storage, products, tasks and events in tables, or edit / upload
                      the world file itself. Mistakes are explained in place.
 2. Run an episode  - any task of that world, with or without news, played by a rule
@@ -47,9 +48,11 @@ from world import World, WorldError, default_world, load_world_text
 try:
     from my_env_environment import PharmaEnvironment
     import world_forms as forms
+    import world_wizard as wizard
 except ModuleNotFoundError:
     from server.my_env_environment import PharmaEnvironment
     from server import world_forms as forms
+    from server import world_wizard as wizard
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -731,8 +734,12 @@ INTRO = """
 <b>Blue</b> is what the agent sees or does. <b>Orange</b> is the hidden truth it never sees.</p></div>
 """
 
-STEP1 = ("Pick a starting point, then change anything. Use the tables for the common things, or the file for everything "
-         "(per-task storage, shared draws, the words news uses). Press **Use these tables** or **Use this file** to apply.")
+STEP1 = ("Start from one of the examples, or **build your own in the Quick builder**: list your products in plain words and "
+         "choose what should go wrong. Then fine-tune it under **Tables**, or under **File** for everything a world file can "
+         "hold (per-task storage, shared draws, the words news uses). Nothing changes until you press the button of the tab you used.")
+BUILDER_HELP = ("Describe your business in plain words. **Create my inventory** builds it, replacing the inventory above; you can "
+                "then open **Tables** or **File** to fine-tune it. Leave unused product rows empty (at least "
+                f"{wizard.MIN_PRODUCTS} products).")
 STEP2 = ("Choose a task and an agent and press **Run episode**. The charts redraw after every simulated day. With news on, "
          "disruptions are announced 5 to 10 days ahead: agents that read it can prepare, the baseline cannot.")
 STEP3 = ("Run several agents on the same seeds of one task. Every agent faces exactly the same episodes, so differences are "
@@ -775,6 +782,29 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                                              type="binary", scale=1)
                 summary = gr.HTML(world_summary_html(start_world))
                 with gr.Tabs():
+                    with gr.Tab("Quick builder"):
+                        gr.Markdown(BUILDER_HELP)
+                        with gr.Row():
+                            g_name = gr.Textbox(label="Name your inventory", value="my_shop", scale=1)
+                            g_business = gr.Textbox(label="What kind of business is it?", value="a small shop", scale=2,
+                                                    info="It goes into the LLM's instructions, e.g. a neighbourhood bakery")
+                            g_days = gr.Slider(wizard.MIN_DAYS, wizard.MAX_DAYS, value=45, step=5, label="Days in an episode", scale=1)
+                        g_products = gr.Dataframe(
+                            value=pd.DataFrame(wizard.starter_rows(), columns=wizard.GUIDED_COLUMNS, dtype=object),
+                            headers=wizard.GUIDED_COLUMNS, datatype=wizard.GUIDED_DATATYPES, interactive=True,
+                            row_count=wizard.GUIDED_ROWS, column_count=(len(wizard.GUIDED_COLUMNS), "fixed"), wrap=True,
+                            label="Your products: one per row")
+                        gr.Markdown(wizard.CRITICALITY_HELP)
+                        with gr.Accordion("Storage room (optional)", open=False):
+                            with gr.Row():
+                                g_shelf = gr.Number(value=21, precision=0, label="Shelf: days of sales that fit")
+                                g_fridge = gr.Number(value=14, precision=0, label="Fridge: days of sales that fit")
+                        g_scenarios = gr.CheckboxGroup(wizard.SCENARIO_CHOICES, value=wizard.SCENARIO_CHOICES,
+                                                       label="What should go wrong in the practice runs?",
+                                                       info="Each one becomes a task. The product that is hit and the timing change with every seed.")
+                        g_severity = gr.Radio(list(wizard.SEVERITIES), value="Medium", label="How bad should it get?")
+                        g_btn = gr.Button("Create my inventory", variant="primary")
+                        g_status = gr.Markdown()
                     with gr.Tab("Tables"):
                         with gr.Row():
                             f_name = gr.Textbox(label="World name", value=initial["name"], scale=1)
@@ -910,10 +940,26 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 return [gr.skip(), world_summary_html(None, str(exc)), gr.skip(), *[gr.skip()] * len(selectors)]
             return [text, world_summary_html(world), text, *_selectors(world)]
 
+        def on_guided(name, business, days, table, shelf, fridge, scenarios, severity):
+            """Build an inventory from the quick builder's plain-word answers."""
+            try:
+                data = wizard.build_guided_world(name, business, days, table, shelf, fridge, scenarios, severity)
+                text = dump_world(data)
+                world = load_world_text(text)
+            except (forms.FormError, WorldError) as exc:
+                # The inventory in use stays as it was; the problem is shown next to the button.
+                return [gr.skip()] * (3 + len(table_parts) + len(selectors)) + [f"⚠️ {exc}"]
+            note = (f"✅ **{world.name}** is ready: {len(world.products)} products, {len(world.storage)} storage area(s), "
+                    f"{len(world.tasks)} practice scenario(s). Open **2 · Run an episode** to watch an agent try it, "
+                    "or fine-tune it under **Tables** and **File**.")
+            return [text, world_summary_html(world), text, *_tables_update(data), *_selectors(world), note]
+
         world_outputs = [world_text, summary, editor, *table_parts, *selectors]
         template.change(on_template, inputs=template, outputs=world_outputs)
         upload.upload(on_upload, inputs=upload, outputs=world_outputs)
         apply_file.click(use_text, inputs=editor, outputs=world_outputs)
+        g_btn.click(on_guided, inputs=[g_name, g_business, g_days, g_products, g_shelf, g_fridge, g_scenarios, g_severity],
+                    outputs=[*world_outputs, g_status], api_name="create_inventory")
         apply_tables.click(on_apply_tables, inputs=[world_text, *table_parts],
                            outputs=[world_text, summary, editor, *selectors])
 
