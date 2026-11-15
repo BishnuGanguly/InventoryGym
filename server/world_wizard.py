@@ -41,10 +41,10 @@ CRITICALITY_HELP = (
     "or `critical` (real harm, e.g. medicine). A shortage of a critical product costs 20 times a low one."
 )
 
-SC_CALM = "Calm weeks: nothing goes wrong"
-SC_SUPPLIER = "A supplier slows down (a different product each time)"
-SC_DEMAND = "Demand jumps for one product (a different one each time)"
-SC_BOTH = "Both at once"
+SC_CALM = "☀️ Calm weeks: nothing goes wrong"
+SC_SUPPLIER = "🚚 A supplier slows down (a different product each time)"
+SC_DEMAND = "📈 Demand jumps for one product (a different one each time)"
+SC_BOTH = "⚡ Both at once"
 SCENARIO_CHOICES = [SC_CALM, SC_SUPPLIER, SC_DEMAND, SC_BOTH]
 
 # Severity -> (supplier delay: lead times x this, demand jump: extra demand at the peak).

@@ -177,3 +177,12 @@ def test_quick_builder_mistakes_keep_the_current_inventory_and_say_what_to_fix()
     assert len(bad) == len(ok)
     assert "Add at least 2 products" in bad[-1] and bad[-1].startswith("⚠️")
     assert all(item == gr.skip() for item in bad[:-1])              # nothing else on the page changes
+
+
+def test_comparison_is_drawn_as_a_table_with_every_agent():
+    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_NEWS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
+    page = D.comparison_html(table)
+    assert page.count("<tr>") == 1 + 3                                      # the header and every agent
+    assert page.index("Oracle") < page.index("News plan") < page.index("Baseline rule")
+    assert "40%" in page and "<table" in page
+    assert "appear here" in D.comparison_html(table.iloc[0:0])
