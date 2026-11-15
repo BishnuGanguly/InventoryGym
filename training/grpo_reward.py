@@ -29,8 +29,8 @@ sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
 from agents import Agent, BaselineAgent, baseline_policy  # noqa: E402
-from models import InventoryState, PharmaAction  # noqa: E402
-from server.my_env_environment import PharmaEnvironment  # noqa: E402
+from models import InventoryState, InventoryAction  # noqa: E402
+from server.inventory_environment import InventoryEnvironment  # noqa: E402
 from training.teacher import TeacherAgent  # noqa: E402
 
 HORIZON = 15             # days played forward per answer
@@ -60,7 +60,7 @@ class DayPrompt:
     states: str = "baseline"    # who played the earlier days (one of PLAYERS)
 
 
-def player(name: str, env: PharmaEnvironment) -> Agent:
+def player(name: str, env: InventoryEnvironment) -> Agent:
     """The rule agent called `name`, ready to play `env`'s episode."""
     if name not in PLAYERS:
         raise ValueError(f"player must be one of {PLAYERS}, not {name!r}")
@@ -73,13 +73,13 @@ def player(name: str, env: PharmaEnvironment) -> Agent:
 # Rebuilding a day's state and prompt
 # ---------------------------------------------------------------------------
 
-def build_state(prompt: DayPrompt) -> Tuple[PharmaEnvironment, InventoryState, History]:
+def build_state(prompt: DayPrompt) -> Tuple[InventoryEnvironment, InventoryState, History]:
     """
     The environment on `prompt.day`, reached by letting `prompt.states` (the baseline,
     or the teacher) play every earlier day, and the action history an LLM agent would
     have (as in eval.run_episode). Deterministic: the same prompt always gives the same state.
     """
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=prompt.task, seed=prompt.seed, news=prompt.news, scenario=prompt.scenario)
     agent, history = player(prompt.states, env), []
     while obs.current_date < prompt.day:
@@ -87,7 +87,7 @@ def build_state(prompt: DayPrompt) -> Tuple[PharmaEnvironment, InventoryState, H
             raise ValueError(f"day {prompt.day} is past the end of the episode")
         day = obs.current_date
         reply, _ = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     return env, obs, history
 
@@ -115,13 +115,13 @@ def news_day_prompts(
     prompts = []
     for task in tasks:
         for seed in seeds:
-            env = PharmaEnvironment()
+            env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
             agent = player(states, env)
             while not obs.done:
                 if obs.news:
                     prompts.append(DayPrompt(task, seed, obs.current_date, scenario, news, states))
-                obs = env.step(PharmaAction(message=agent.act(obs, [])[0]))
+                obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
     return prompts
 
 
@@ -152,7 +152,7 @@ def future_rng(prompt: DayPrompt, index: int) -> Random:
     return Random(f"future|{prompt.task}|{prompt.seed}|{prompt.day}|{prompt.scenario}|{prompt.news}|{index}")
 
 
-def play_forward(env: PharmaEnvironment, obs: InventoryState, extra: Dict[str, float], horizon: int = HORIZON,
+def play_forward(env: InventoryEnvironment, obs: InventoryState, extra: Dict[str, float], horizon: int = HORIZON,
                  continuation: str = "baseline") -> float:
     """
     Sum of the daily rewards: today's order with `extra`, then `continuation` (the
@@ -164,12 +164,12 @@ def play_forward(env: PharmaEnvironment, obs: InventoryState, extra: Dict[str, f
         if obs.done:
             break
         reply = json.dumps(baseline_policy(obs, extra_days=extra)) if i == 0 else later.act(obs, [])[0]
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         total += obs.reward or 0.0
     return total
 
 
-def score(env: PharmaEnvironment, obs: InventoryState, prompt: DayPrompt, extra: Dict[str, float],
+def score(env: InventoryEnvironment, obs: InventoryState, prompt: DayPrompt, extra: Dict[str, float],
           futures: int = FUTURES, horizon: int = HORIZON, continuation: str = "baseline") -> float:
     """S(extra): the mean of play_forward over the prompt's futures. Leaves `env` unchanged."""
     totals = []
@@ -201,9 +201,9 @@ class GRPOReward:
             raise ValueError(f"continuation must be one of {PLAYERS}, not {continuation!r}")
         self.futures, self.horizon, self.cache_size = futures, horizon, cache_size
         self.continuation = continuation
-        self._cache: Dict[DayPrompt, Tuple[PharmaEnvironment, InventoryState, float]] = {}
+        self._cache: Dict[DayPrompt, Tuple[InventoryEnvironment, InventoryState, float]] = {}
 
-    def _state(self, prompt: DayPrompt) -> Tuple[PharmaEnvironment, InventoryState, float]:
+    def _state(self, prompt: DayPrompt) -> Tuple[InventoryEnvironment, InventoryState, float]:
         if prompt not in self._cache:
             if len(self._cache) >= self.cache_size:
                 self._cache.pop(next(iter(self._cache)))
@@ -211,7 +211,7 @@ class GRPOReward:
             self._cache[prompt] = (env, obs, self._score(env, obs, prompt, {}))
         return self._cache[prompt]
 
-    def _score(self, env: PharmaEnvironment, obs: InventoryState, prompt: DayPrompt, extra: Dict[str, float]) -> float:
+    def _score(self, env: InventoryEnvironment, obs: InventoryState, prompt: DayPrompt, extra: Dict[str, float]) -> float:
         return score(env, obs, prompt, extra, self.futures, self.horizon, self.continuation)
 
     @staticmethod

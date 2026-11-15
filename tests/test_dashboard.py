@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import inspect
+
 import gradio as gr
 import pytest
 
@@ -92,7 +94,7 @@ def test_rendering_works_before_and_after_a_run():
 
 
 def test_build_dashboard_returns_blocks():
-    assert isinstance(build_dashboard(None, None, None, False, "pharma_env", ""), gr.Blocks)
+    assert isinstance(build_dashboard(None, None, None, False, "inventorygym", ""), gr.Blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -186,3 +188,17 @@ def test_comparison_is_drawn_as_a_table_with_every_agent():
     assert page.index("Oracle") < page.index("News plan") < page.index("Baseline rule")
     assert "40%" in page and "<table" in page
     assert "appear here" in D.comparison_html(table.iloc[0:0])
+
+
+# ---------------------------------------------------------------------------
+# A visitor can only spend their own token
+# ---------------------------------------------------------------------------
+
+def test_llm_runs_never_fall_back_to_the_servers_secrets(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_owner_secret")
+    monkeypatch.setenv("API_KEY", "owner_key")
+    assert D.visitor_token("") == "" and D.visitor_token(None) == ""
+    assert D.visitor_token("  hf_mine ") == "hf_mine"
+    # The dashboard module reads no environment variable at all: nothing of the owner's can leak into a run.
+    source = inspect.getsource(D)
+    assert "getenv" not in source and "os.environ" not in source and "inference.API_KEY" not in source

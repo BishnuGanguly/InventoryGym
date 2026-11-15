@@ -8,28 +8,28 @@ from openenv.core.client_types import StepResult
 from openenv.core.env_client import EnvClient
 from openenv.core.env_server.types import State
 
-from models import InventoryState, PharmaAction
+from models import InventoryState, InventoryAction
 
 
-class PharmaEnvClient(EnvClient[PharmaAction, InventoryState, State]):
+class InventoryEnvClient(EnvClient[InventoryAction, InventoryState, State]):
     """
-    Client for the PharmaEnvironment.
+    Client for the InventoryEnvironment.
 
     Sends a text action message (or structured orders dict) to the server
     and receives a full InventoryState as the observation.
 
     Example:
-        >>> with PharmaEnvClient(base_url="http://localhost:8000") as client:
+        >>> with InventoryEnvClient(base_url="http://localhost:8000") as client:
         ...     result = client.reset()
         ...     print(result.observation.current_date)
         ...
-        ...     action = PharmaAction(orders={"insulin": 100.0})
+        ...     action = InventoryAction(orders={"insulin": 100.0})
         ...     result = client.step(action)
         ...     print(result.observation.skus["insulin"].inventory_on_hand)
     """
 
-    def _step_payload(self, action: PharmaAction) -> Dict[str, Any]:
-        """Convert PharmaAction into a JSON-serializable payload."""
+    def _step_payload(self, action: InventoryAction) -> Dict[str, Any]:
+        """Convert InventoryAction into a JSON-serializable payload."""
         return {
             "message": action.message,
             "orders": {
@@ -59,3 +59,7 @@ class PharmaEnvClient(EnvClient[PharmaAction, InventoryState, State]):
             episode_id=payload.get("episode_id"),
             step_count=payload.get("step_count", 0),
         )
+
+
+# The name this class had before the project became InventoryGym. Old code keeps working.
+PharmaEnvClient = InventoryEnvClient

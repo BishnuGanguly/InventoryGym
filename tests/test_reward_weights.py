@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import SKU_CATALOGUE, TEST_SEEDS, compute_final_score, compute_step_reward, weighted_fill
 
 PENALTIES = {sku: spec["stockout_penalty"] for sku, spec in SKU_CATALOGUE.items()}
@@ -42,12 +42,12 @@ def test_zero_penalties_fall_back_to_the_plain_mean():
 
 def test_episode_score_is_the_mean_of_weighted_step_rewards():
     """The score is rebuilt from running totals; it must match the rewards actually paid."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0])
     rewards = []
     while not obs.done:
         # Order a little paracetamol only: the other SKUs run short, unevenly.
-        obs = env.step(PharmaAction(message='{"paracetamol": 200}'))
+        obs = env.step(InventoryAction(message='{"paracetamol": 200}'))
         rewards.append(obs.reward)
     assert compute_final_score(obs, env._episode_config) == pytest.approx(
         min(1.0, max(0.0, sum(rewards) / env._episode_config.no_of_days)))
@@ -62,6 +62,6 @@ def test_every_prompt_says_shortages_are_weighted_by_stockout_penalty():
         assert "Shortages are weighted by stockout_penalty in your score" in prompt
         assert not SKU_WITH_NUMBER.search(prompt)
     assert "weighted by stockout_penalty" in inference.NEWS_SYSTEM_PROMPT
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], news=1)
     assert '"stockout_penalty": 100.0' in inference.build_news_prompt(obs)

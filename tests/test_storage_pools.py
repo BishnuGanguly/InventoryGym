@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 import inference
 from models import EpisodeConfig, SKUEpisodeConfig, StoragePoolConfig
-from server.my_env_environment import PharmaEnvironment
+from server.inventory_environment import InventoryEnvironment
 from world import load_world
 
 GROCERY = Path(__file__).resolve().parent.parent / "examples" / "worlds" / "grocery.yaml"
@@ -70,7 +70,7 @@ def test_bad_pool_assignments_are_explained(kwargs, message):
 # ---------------------------------------------------------------------------
 
 def grocery_env(seed=3):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(world=load_world(GROCERY), task_name="holiday_rush", seed=seed)
     return env, obs
 
@@ -123,7 +123,7 @@ def test_report_lists_every_pool_when_the_layout_is_not_cold_plus_ambient():
 
 
 def test_report_keeps_the_original_layout_for_one_cold_and_one_ambient_pool():
-    pharma = PharmaEnvironment().reset(task_name="flu_season", seed=0)
+    pharma = InventoryEnvironment().reset(task_name="flu_season", seed=0)
     report = inference.observation_to_dict(pharma)
     assert set(report["storage"]) == {"cold_total", "cold_used", "cold_ratio", "ambient_total", "ambient_used",
                                       "ambient_ratio", "cold_days", "ambient_days"}
@@ -132,7 +132,7 @@ def test_report_keeps_the_original_layout_for_one_cold_and_one_ambient_pool():
     two = load_world(GROCERY).model_dump()
     del two["storage"]["freezer"]
     two["products"]["ice_cream"]["storage"] = "fridge"
-    obs = PharmaEnvironment().reset(world=two, task_name="normal_weeks", seed=0)
+    obs = InventoryEnvironment().reset(world=two, task_name="normal_weeks", seed=0)
     assert obs.has_classic_storage() and "cold_total" in inference.observation_to_dict(obs)["storage"]
 
 

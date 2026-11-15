@@ -53,6 +53,15 @@ ALL                      20   0.968   0.006   0.014   0.938   0.989
 
 To see an episode play out with charts, start the server and open the dashboard (see [Server and dashboard](#server-and-dashboard)).
 
+One command covers the common jobs (`uv run inventorygym --help`):
+
+```bash
+uv run inventorygym serve                    # the server and the dashboard at http://localhost:8000/dashboard/
+uv run inventorygym worlds                   # the built-in inventories and their tasks
+uv run inventorygym check my_store.yaml      # is my world file valid, and what is in it?
+uv run inventorygym eval --agent baseline --episodes 5      # the same options as eval.py
+```
+
 ## How an episode works
 
 Each day, for 45 to 60 days:
@@ -211,23 +220,23 @@ Training has not yet been run end to end since the warm start was added, and it 
 ## Server and dashboard
 
 ```bash
-ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
-# open http://localhost:8000/dashboard
+uv run inventorygym serve
+# open http://localhost:8000/dashboard/
 ```
 
 - **Dashboard** (`/dashboard`, the page the Space opens), in three steps:
   1. **Your inventory**: build your own in the **Quick builder**, in plain words: one row per product (what it sells per day, how many days a delivery takes, whether it needs a fridge, how bad it is to run out), then what should go wrong in the practice runs and how badly. Or start from the pharma world or the grocery example. Fine-tune in tables or in the world file itself, or upload one. Mistakes are explained in place, and a preview shows what a task does and the news it produces.
-  2. **Run an episode**: any task, with or without news, played by a rule agent, a reference agent or an LLM (your token, any model the endpoint serves). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the news feed, stock, lead times and orders per product, with the hidden truth in orange.
+  2. **Run an episode**: any task, with or without news, played by a rule agent, a reference agent or an LLM (your own token, pasted for that run; the server's secrets are never used). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the news feed, stock, lead times and orders per product, with the hidden truth in orange.
   3. **Compare agents**: several agents on the same seeds, with intervals and the share of the gap to the oracle each closes.
-- **API**: `/reset`, `/step`, `/state`, `/schema` and a WebSocket, following OpenEnv. [`client.py`](client.py) is the Python client.
-- **Playground** (`/web`): reset and step an episode by hand; the dashboard is also its *Custom* tab.
+- **API**: `/reset`, `/step`, `/state`, `/schema`, `/metadata` and a WebSocket, following OpenEnv 0.3. [`client.py`](client.py) is the Python client. Up to 8 agents can hold a session at once (`MAX_CONCURRENT_ENVS`), each with its own episode.
+- **Playground** (`/web`): the dashboard is its first tab; the *Playground* tab resets and steps an episode by hand.
 - **Docker / Hugging Face Space**: the `Dockerfile` builds the server with the web interface on; the front matter of this file configures the Space.
 
 ```python
-from server.my_env_environment import PharmaEnvironment
+from server.inventory_environment import InventoryEnvironment
 from world import load_world
 
-env = PharmaEnvironment()
+env = InventoryEnvironment()
 obs = env.reset(world=load_world("examples/worlds/grocery.yaml"), task_name="holiday_rush", seed=42, news=2)
 ```
 
@@ -256,9 +265,10 @@ InventoryGym/
 ├── examples/worlds/       # Example worlds to copy (grocery.yaml)
 ├── models.py              # Data models: observation, action, episode config
 ├── server/
-│   ├── my_env_environment.py   # The simulation
+│   ├── inventory_environment.py   # The simulation
 │   ├── app.py                  # OpenEnv server (FastAPI)
 │   ├── dashboard.py            # The dashboard: your inventory, run, compare
+│   ├── world_wizard.py         # The quick builder: plain words in, a world file out
 │   └── world_forms.py          # A world as editable tables, for the dashboard
 ├── tasks.py               # The pharma tasks' random scenarios, seeds, scoring
 ├── news.py                # News about a task's disruptions
@@ -268,8 +278,10 @@ InventoryGym/
 ├── training/              # Teacher, GRPO reward, probe exam, Kaggle notebook
 ├── local_llm/             # Run a local model with Ollama
 ├── client.py              # OpenEnv client
+├── cli.py                 # The `inventorygym` command
+├── openenv.yaml           # What OpenEnv reads to validate and deploy
 ├── docs/                  # Detailed documentation
-└── tests/                 # 308 tests
+└── tests/                 # The test suite
 ```
 
 ```bash
@@ -280,7 +292,7 @@ uv run --extra dev python -m pytest tests     # about a minute
 
 InventoryGym grew out of a pharma cold-chain benchmark, and some parts still show it:
 
-- **Names in the code.** The classes are still `PharmaEnvironment`, `PharmaAction` and `PharmaEnvClient`, and the package is `openenv-my_env`. Renaming them, with the old names kept working, is planned.
+- **Old names still work.** The classes are `InventoryEnvironment`, `InventoryAction` and `InventoryEnvClient`, and the package is `inventorygym`. Their earlier names (`PharmaEnvironment`, `PharmaAction`, `PharmaEnvClient`, `server/my_env_environment.py`) are kept as aliases.
 - **Pharma only, for now**: training (`training/`) and the local LLM runner run the pharma world's tasks. `eval.py`, the dashboard, every agent, news and prompts work on any world.
 - **The pharma world keeps its original prompts and news wording**, so published results and trained models stay valid. Every other world, including an edited copy of `pharma.yaml`, gets prompts and news written from its file.
-- **Not there yet**: continuous integration, a single command-line tool, and a licence file.
+- **Not there yet**: a licence file. Until one is added, nobody else has permission to reuse the code.

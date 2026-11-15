@@ -36,8 +36,8 @@ sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
 from agents import Agent, BaselineAgent, news_plan_adjust_days  # noqa: E402
-from models import InventoryState, PharmaAction  # noqa: E402
-from server.my_env_environment import PharmaEnvironment  # noqa: E402
+from models import InventoryState, InventoryAction  # noqa: E402
+from server.inventory_environment import InventoryEnvironment  # noqa: E402
 from tasks import TASK_REGISTRY, TRAIN_SEEDS  # noqa: E402
 from training.episodes import adjust_messages, answer_to_order  # noqa: E402
 
@@ -61,7 +61,7 @@ QUIET_SHARE = 0.15
 # The teacher's answer
 # ---------------------------------------------------------------------------
 
-def normal_lead_times(env: PharmaEnvironment) -> Dict[str, float]:
+def normal_lead_times(env: InventoryEnvironment) -> Dict[str, float]:
     """
     Each SKU's normal lead time: the avg_lead_time of the first report, before any
     delivery (NewsPlanAgent keeps that value; this reads the same number on any day).
@@ -152,7 +152,7 @@ def sft_examples(
     for task in tasks:
         for seed in seeds:
             played_by = states if states != "mixed" else ("teacher" if seed % 2 == 0 else "baseline")
-            env = PharmaEnvironment()
+            env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
             events = list(env._episode_config.news)
             normal = normal_lead_times(env)
@@ -168,7 +168,7 @@ def sft_examples(
                         "has_news": has_news, "states": played_by,
                     })
                 reply = answer_to_order(obs, answer) if played_by == "teacher" else baseline.act(obs, history)[0]
-                obs = env.step(PharmaAction(message=reply))
+                obs = env.step(InventoryAction(message=reply))
                 history.append((day, reply, inference.build_feedback(obs)))
     return rows
 

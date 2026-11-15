@@ -659,10 +659,10 @@ class EpisodeConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# PharmaAction
+# InventoryAction
 # ---------------------------------------------------------------------------
 
-class PharmaAction(Action):
+class InventoryAction(Action):
 
     orders: Dict[str, float] = Field(
         default_factory=dict,
@@ -693,3 +693,7 @@ class PharmaAction(Action):
             except json.JSONDecodeError as exc:
                 raise ValueError(f'orders must be a JSON object like {{"insulin": 40}}: {exc}') from None
         return v
+
+
+# The name this class had before the project became InventoryGym. Old code keeps working.
+PharmaAction = InventoryAction

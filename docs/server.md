@@ -4,7 +4,7 @@ Running the environment as an OpenEnv server, the web playground, the live dashb
 
 ## Web Playground
 
-The Docker image sets `ENABLE_WEB_INTERFACE=true`, so the server also serves OpenEnv's Gradio Playground at `/web` (`/` redirects there). On the Hugging Face Space it is the page that opens.
+The Docker image sets `ENABLE_WEB_INTERFACE=true`, so the server also serves OpenEnv's Gradio page at `/web` (`/` redirects there). Its first tab is the dashboard and its second is the **Playground**, described here.
 
 - **Reset** starts a new episode, then **Step** advances one day.
 - Type orders in either box: **Orders** takes a JSON object such as `{"insulin": 40}`, and **Message** takes free text containing one, as an LLM would reply.
@@ -20,14 +20,16 @@ curl -X POST http://localhost:8000/web/reset \
 To run it locally:
 
 ```bash
-ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
+uv run inventorygym serve          # the same as ENABLE_WEB_INTERFACE=true uv run uvicorn server.app:app --port 8000
 # open http://localhost:8000/web
 ```
+
+`uv run inventorygym serve --api-only` starts the API alone, without the dashboard and the Playground.
 
 
 ## Dashboard
 
-The dashboard is served at `/dashboard` (the address the Hugging Face Space opens) and is also the **Custom** tab next to the Playground at `/web`. It has three steps:
+The dashboard is served at `/dashboard` (the address the Hugging Face Space opens) and is also the first tab, **Dashboard**, at `/web`. It has three steps:
 
 1. **Your inventory.** Build your own, or pick a starting point (the pharma world, the grocery example or a blank starter) and change it:
    - **Quick builder** (no knowledge of world files needed). Give a name and the kind of business, then fill one row per product in plain words: *Sells per day*, *Delivery takes (days)*, *Needs a fridge* (a checkbox) and *If we run out* (`low`, `medium`, `high` or `critical`: how bad a shortage is). Choose what should go wrong in the practice runs (calm weeks, a supplier slowing down, demand jumping for one product, or both at once) and how bad (mild, medium or severe), then press **Create my inventory**. The builder turns your answers into a world file:
@@ -45,7 +47,7 @@ The dashboard is served at `/dashboard` (the address the Hugging Face Space open
    - At the end a line says how much of the gap between the baseline and the oracle the agent closed. In the score chart, the shaded zone between the baseline and the oracle is the room to improve.
 3. **Compare agents.** Several agents on the same test seeds of one task: a chart and a table with the mean score and a 95% interval, the difference to the baseline seed by seed, and the share of the gap to the oracle closed. LLM agents run at most 3 episodes here.
 
-**LLM agents.** On the Space, add your token as a **Secret** named `HF_TOKEN` (Space → Settings → Variables and secrets), or paste a token under *More options → LLM settings* for a single run. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against that account's credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. A token is used for the run only and is never stored.
+**LLM agents.** Paste a token under *More options → LLM settings*. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against the account of the token you pasted. The dashboard never uses the server's own `HF_TOKEN` or `API_KEY`: it is a public page, so a visitor can only spend their own credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. A token is used for the run only and is never stored.
 
 **Limits.** A world typed or uploaded in the dashboard is parsed with the safe YAML loader and may have at most 30 products, 20 tasks, 180 days and 100 kB. The server never opens a file path sent from the browser. Each run builds its own environment, so viewers never share an episode.
 
@@ -67,7 +69,8 @@ With neither, a small 30-day two-SKU default episode is used.
 |---|---|---|
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | LLM API endpoint |
 | `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model identifier |
-| `HF_TOKEN` | — | HuggingFace API key |
+| `HF_TOKEN` | — | HuggingFace API key for `inference.py` and `eval.py` on your own machine. The dashboard never reads it. |
+| `MAX_CONCURRENT_ENVS` | `8` | How many agents can hold a session (WebSocket) at once. Each session has its own environment and episode. |
 | `ENV_BASE_URL` | `http://localhost:8000` | Server URL |
 | `LOCAL_IMAGE_NAME` | — | Run the server from this Docker image instead of `ENV_BASE_URL` |
 | `TASK_SEED` | `42` | Seed for task generation and environment noise |

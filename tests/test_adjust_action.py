@@ -10,21 +10,21 @@ import pytest
 import eval as E
 import inference
 from agents import BaselineAgent, LLMAgent, baseline_policy
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import TEST_SEEDS
 
 from test_prompt import SKU_WITH_NUMBER
 
 
 def _played(days: int):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0])
     agent, history = BaselineAgent(), []
     for _ in range(days):
         day = obs.current_date
         reply, _ = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     return obs, history
 

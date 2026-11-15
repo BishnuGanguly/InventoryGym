@@ -6,9 +6,9 @@ import pytest
 
 import eval as E
 import inference
-from models import PharmaAction
+from models import InventoryAction
 from news import find_events
-from server.my_env_environment import PharmaEnvironment
+from server.inventory_environment import InventoryEnvironment
 from tasks import (RANDOM_STORAGE_DAYS, SKU_IDS, TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS,
                    get_task_config)
 
@@ -82,10 +82,10 @@ def test_news_follows_the_random_skus_and_days():
 
 
 def _report_after(days, scenario):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=TEST_SEEDS[1], scenario=scenario)
     for _ in range(days):
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     return inference.observation_to_dict(obs)["storage"]
 
 
@@ -103,7 +103,7 @@ def test_prompts_point_to_the_reported_storage_days():
 
 
 def test_environment_and_eval_take_the_scenario():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(task_name="flu_season", seed=TEST_SEEDS[0], scenario="random")
     assert env._episode_config == get_task_config("flu_season", TEST_SEEDS[0], scenario="random")
     record = E.run_episode("baseline", "flu_season", TEST_SEEDS[0], scenario="random")

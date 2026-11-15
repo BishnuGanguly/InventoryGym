@@ -9,8 +9,8 @@ import pytest
 
 import eval as E
 import inference
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS
 from training import episodes as EP
 from training import grpo_reward as G
@@ -23,13 +23,13 @@ LOW, HIGH = inference.ADJUST_DAYS_RANGE
 
 def days_of(task="supply_chain_broken", seed=4):
     """(env, obs) on every day of an episode the teacher plays."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=task, seed=seed, news=2, scenario="random")
     agent = T.TeacherAgent()
     agent.start_episode(env)
     while not obs.done:
         yield env, obs, agent
-        obs = env.step(PharmaAction(message=agent.act(obs, [])[0]))
+        obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
 
 
 # ---------------------------------------------------------------------------
@@ -51,7 +51,7 @@ def test_answers_are_whole_days_in_range_for_every_sku_and_zero_without_visible_
 
 
 def test_normal_lead_times_are_the_first_reports():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=1, news=2, scenario="random")
     assert T.normal_lead_times(env) == {k: s.avg_lead_time for k, s in obs.skus.items()}
 

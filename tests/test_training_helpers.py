@@ -10,8 +10,8 @@ import pytest
 import eval as E
 import inference
 from agents import LLMAgent
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS
 from training import episodes as EP
 from training import probe as P
@@ -94,13 +94,13 @@ def test_batched_episodes_match_the_llm_agent():
     stub = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
         create=lambda **_: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=answer))]))))
     agent = LLMAgent("stub", "x", "x", client=stub)
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], news=2, scenario="random")
     history = []
     while not obs.done:
         day = obs.current_date
         reply, _ = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     expected = E.compute_final_score(obs, env._episode_config)
     got = EP.run_llm_episodes(["flu_season"], TEST_SEEDS[:1], lambda b: [answer] * len(b), save_replies=True)[0]

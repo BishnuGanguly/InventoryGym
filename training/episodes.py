@@ -19,8 +19,8 @@ from typing import Any, Callable, Dict, List, Sequence, Tuple
 import inference
 from agents import Agent, baseline_policy
 from eval import JSON_OBJECT
-from models import InventoryState, PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryState, InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import compute_final_score
 
 Generate = Callable[[List[List[Dict[str, str]]]], List[str]]
@@ -65,7 +65,7 @@ def run_llm_episodes(
     runs = []
     for task in tasks:
         for seed in seeds:
-            env = PharmaEnvironment()
+            env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
             runs.append({"task": task, "seed": seed, "env": env, "obs": obs, "history": [], "fill": 0.0,
                          "stockout": 0, "overflow": 0, "wasted": 0.0, "parse_failures": 0, "replies": []})
@@ -81,7 +81,7 @@ def run_llm_episodes(
             obs, day = r["obs"], r["obs"].current_date
             reply = answer_to_order(obs, text)
             r["parse_failures"] += not JSON_OBJECT.search(text)
-            obs = r["env"].step(PharmaAction(message=reply))
+            obs = r["env"].step(InventoryAction(message=reply))
             fills = [s.demand_fulfilled_today for s in obs.skus.values()]
             r["fill"] += sum(fills) / len(fills)
             r["stockout"] += sum(f < 0.999 for f in fills)
@@ -115,14 +115,14 @@ def run_rule_episodes(agent: Agent, name: str, tasks: Sequence[str], seeds: Sequ
     records = []
     for task in tasks:
         for seed in seeds:
-            env = PharmaEnvironment()
+            env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
             agent.start_episode(env)
             history: History = []
             while not obs.done:
                 day = obs.current_date
                 reply, _ = agent.act(obs, history)
-                obs = env.step(PharmaAction(message=reply))
+                obs = env.step(InventoryAction(message=reply))
                 history.append((day, reply, inference.build_feedback(obs)))
             records.append({"agent": name, "task": task, "seed": seed, "split": split, "news": news,
                             "scenario": scenario, "score": round(compute_final_score(obs, env._episode_config), 6)})

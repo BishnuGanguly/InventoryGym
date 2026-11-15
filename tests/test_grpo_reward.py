@@ -12,8 +12,8 @@ import pytest
 import inference
 import training.grpo_reward as G
 from agents import LLMAgent
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS
 
 TASKS = sorted(TASK_REGISTRY)
@@ -32,10 +32,10 @@ def _news_skus(prompt):
 # --- the environment hook ---------------------------------------------------
 
 def test_resample_future_noise_redraws_from_today_on_only():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=1, scenario="random")
     for _ in range(10):
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     before = copy.deepcopy((env._demand_z, env._lead_time_z))
     env.resample_future_noise(Random(5))
     for old, new in zip(before, (env._demand_z, env._lead_time_z)):
@@ -70,13 +70,13 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
     agent = LLMAgent("stub", "x", "x", client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=p.task, seed=p.seed, news=p.news, scenario=p.scenario)
     history = []
     while obs.current_date <= p.day:
         day = obs.current_date
         reply, _ = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     assert sent[p.day] == G.prompt_messages(p)
     assert "days_of_cover" not in sent[p.day][1]["content"]

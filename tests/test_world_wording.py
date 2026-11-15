@@ -11,8 +11,8 @@ import yaml
 
 import inference
 from agents import LLMAgent, NewsLLMAgent
-from models import InventoryState, PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryState, InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import PHARMA_WORLD, TASK_REGISTRY, get_task_config
 from world import WorldError, build_episode, load_world
 
@@ -34,7 +34,7 @@ def pharma_copy(**changes):
 
 
 def reset(world, task, news=2, seed=1):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     return env, env.reset(world=world, task_name=task, seed=seed, news=news)
 
 
@@ -77,7 +77,7 @@ def test_observation_carries_the_context_and_survives_a_round_trip():
     _, obs = reset(GROCERY, "holiday_rush")
     assert obs.context.business == "a neighbourhood grocery store"
     assert InventoryState.model_validate(obs.model_dump(mode="json")).context == obs.context
-    assert PharmaEnvironment().reset(task_name="flu_season", seed=1).context is None
+    assert InventoryEnvironment().reset(task_name="flu_season", seed=1).context is None
 
 
 @pytest.mark.parametrize("change, message", [
@@ -144,7 +144,7 @@ def test_a_worlds_own_wording_draws_the_same_random_numbers():
 # ---------------------------------------------------------------------------
 
 def test_pharma_prompts_are_the_original_constants():
-    obs = PharmaEnvironment().reset(task_name="flu_season", seed=1, news=2)
+    obs = InventoryEnvironment().reset(task_name="flu_season", seed=1, news=2)
     assert inference.system_prompt("units", obs) == inference.system_prompt("units") == inference.SYSTEM_PROMPT
     assert inference.system_prompt("days", obs) == inference.SYSTEM_PROMPT_DAYS
     assert inference.system_prompt("adjust", obs) == inference.SYSTEM_PROMPT_ADJUST
@@ -199,7 +199,7 @@ def test_answers_may_use_a_products_name_or_alias():
     reply = {"Fresh Milk": 3, "ice cream": 4, "RICE": 1, "bread": 9, "hcq": 2}
     assert inference.parse_extra_days(obs, reply) == {"milk": 3.0, "ice_cream": 4.0, "rice": 1.0}
     assert inference.parse_extra_days(obs, {"whole milk": 2}) == {"milk": 2.0}
-    pharma = PharmaEnvironment().reset(task_name="flu_season", seed=1)
+    pharma = InventoryEnvironment().reset(task_name="flu_season", seed=1)
     assert inference.parse_extra_days(pharma, {"HCQ": 2, "amlodipine": 1}) == {"hydroxychloroquine": 2.0, "bp_medication": 1.0}
 
 
@@ -213,7 +213,7 @@ def test_agents_send_the_worlds_prompts():
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     env, obs = reset(GROCERY, "holiday_rush")
     while not obs.news:
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     LLMAgent("stub", "x", "x", client=client).act(obs, [])
     NewsLLMAgent("stub", "x", "x", client=client).act(obs, [])
     assert sent[0][0]["content"] == inference.system_prompt("adjust", obs)

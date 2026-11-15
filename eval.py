@@ -47,8 +47,8 @@ import inference  # noqa: E402
 from agents import (  # noqa: E402
     Agent, BaselineAgent, LLMAgent, NewsLLMAgent, NewsPlanAgent, NewsRuleAgent, NothingAgent, OracleAgent,
 )
-from models import PharmaAction  # noqa: E402
-from server.my_env_environment import PharmaEnvironment  # noqa: E402
+from models import InventoryAction  # noqa: E402
+from server.inventory_environment import InventoryEnvironment  # noqa: E402
 from news import NEWS_LEVELS  # noqa: E402
 from tasks import SEED_SPLITS, compute_final_score  # noqa: E402
 from world import DEFAULT_WORLD, World, WorldError, builtin_worlds, load_world  # noqa: E402
@@ -107,7 +107,7 @@ def run_episode(
     `world` is the world the task belongs to (default the built-in pharma world).
     """
     agent = make_agent(agent_name, llm)
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=task_name, seed=seed, news=news, scenario=scenario, world=world)
     agent.start_episode(env)
 
@@ -132,7 +132,7 @@ def run_episode(
             if llm_errors == day + 1 and llm_errors >= MAX_INITIAL_LLM_ERRORS:
                 raise RuntimeError(f"The LLM failed its first {llm_errors} calls; last error: {error}")
 
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         fills = [sku.demand_fulfilled_today for sku in obs.skus.values()]
         fill_total += sum(fills) / len(fills)
         stockout_sku_days += sum(1 for f in fills if f < 0.999)

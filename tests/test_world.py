@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 import eval as E
-from server.my_env_environment import PharmaEnvironment
+from server.inventory_environment import InventoryEnvironment
 from tasks import (PHARMA_WORLD, SKU_CATALOGUE, TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS, flat_curve,
                    gaussian_curve, get_task_config)
 from world import (DemandWave, SupplierDelay, WorldError, build_episode, builtin_worlds, load_world)
@@ -226,7 +226,7 @@ def test_event_types_are_exported():
 # ---------------------------------------------------------------------------
 
 def test_environment_reset_accepts_worlds_but_not_file_paths():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     world = load_world(GROCERY)
     obs = env.reset(world=world, task_name="delivery_strike", seed=1)
     assert sorted(obs.skus) == ["biscuits", "ice_cream", "milk", "rice", "yogurt"] and obs.current_date == 0

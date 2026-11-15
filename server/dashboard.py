@@ -25,8 +25,8 @@ from __future__ import annotations
 
 import html
 import math
-import os
 import random
+import re
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -41,17 +41,17 @@ import yaml
 import inference
 from agents import (Agent, BaselineAgent, History, LLMAgent, NewsLLMAgent, NewsPlanAgent, NewsRuleAgent,  # noqa: F401
                     NothingAgent, OracleAgent, baseline_policy)
-from models import EpisodeConfig, InventoryState, PharmaAction
+from models import EpisodeConfig, InventoryState, InventoryAction
 from news import find_events
 from tasks import PHARMA_WORLD, TEST_SEEDS, average_step_reward, get_task_config, weighted_fill
 from world import World, WorldError, default_world, load_world_text
 
 try:
-    from my_env_environment import PharmaEnvironment
+    from inventory_environment import InventoryEnvironment
     import world_forms as forms
     import world_wizard as wizard
 except ModuleNotFoundError:
-    from server.my_env_environment import PharmaEnvironment
+    from server.inventory_environment import InventoryEnvironment
     from server import world_forms as forms
     from server import world_wizard as wizard
 
@@ -275,7 +275,8 @@ def current_chip_html(world: World) -> str:
 def note_html(text: str, kind: str = "error") -> str:
     """A short message as a card ('error' or 'info')."""
     css = "ig-error" if kind == "error" else ""
-    return f'<div class="ig-card {css}">{html.escape(text)}</div>'
+    body = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(text))      # **bold**, as in the messages' source
+    return f'<div class="ig-card {css}">{body}</div>'
 
 
 def section_html(number: str, title: str, hint: str = "") -> str:
@@ -333,7 +334,7 @@ class EpisodeTrace:
 def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, news: int = 0,
                 scenario: str = "fixed") -> Iterator[EpisodeTrace]:
     """Play one episode, yielding the (same, growing) trace after reset and after every day."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=task_name, seed=seed, news=news, scenario=scenario, world=world)
     if hasattr(agent, "start_episode"):
         agent.start_episode(env)
@@ -349,7 +350,7 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
         news_before = set(trace.rows[-1]["news"]) if trace.rows else set()
 
         reply, error = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
 
         placed = [o for o in env._open_orders if o[2] == day]
         trace.orders.extend(placed)
@@ -428,6 +429,16 @@ def reference_curves(task_name: str, seed: int, world: Optional[World], news: in
 def gap_closed(score: float, baseline: float, oracle: float) -> Optional[float]:
     """Share of the way from the baseline to the oracle; None when the two are (almost) the same."""
     return (score - baseline) / (oracle - baseline) if oracle - baseline > 1e-6 else None
+
+
+def visitor_token(typed: Any) -> str:
+    """
+    The token an LLM run may use: only the one typed into the page for this run.
+
+    The server's own secrets (HF_TOKEN, API_KEY) are never a fallback. The dashboard is a
+    public page, and with a fallback any visitor could run any model on the owner's account.
+    """
+    return str(typed or "").strip()
 
 
 def make_agent(label: str, model: str = "", token: str = "") -> Any:
@@ -909,9 +920,9 @@ STEP2 = ("Choose a task and an agent and press **Run episode**. With news on, di
          "agents that read it can prepare, the baseline cannot.")
 STEP3 = ("Run several agents on the same seeds of one task. Every agent faces exactly the same episodes, so differences are "
          "taken seed by seed.")
-LLM_NOTE = (f"LLM agents call `{inference.API_BASE_URL}` with your token (on the Space, the `HF_TOKEN` secret is used when "
-            "the box is empty). The token is used for this run only and is never stored. One model call per simulated "
-            "day; the hybrid agent only calls the model on days with news.")
+LLM_NOTE = (f"LLM agents call `{inference.API_BASE_URL}` with the token you paste here, on your own account. The token is "
+            "used for this run only and is never stored or logged; the server's own secrets are never used for a "
+            "visitor's run. One model call per simulated day; the hybrid agent only calls the model on days with news.")
 
 
 def _tables_update(data: Dict[str, Any]) -> List[Any]:
@@ -1021,8 +1032,8 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     with gr.Row():
                         model = gr.Dropdown(MODEL_SUGGESTIONS, value=inference.MODEL_NAME, allow_custom_value=True,
                                             label="Model (pick one or type any model the endpoint serves)")
-                        token = gr.Textbox(type="password", label="API token (optional)",
-                                           placeholder="Leave blank to use the server's HF_TOKEN secret")
+                        token = gr.Textbox(type="password", label="Your API token (LLM agents only)",
+                                           placeholder="Paste a token for the endpoint; used for this run only")
                     gr.Markdown(LLM_NOTE)
                 with gr.Row():
                     run_btn = gr.Button("▶ Run episode", variant="primary", elem_classes="ig-cta", scale=3)
@@ -1152,8 +1163,6 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
         run_outputs = [status, results, kpis, verdict, score_plot, storage_plot, news_feed, focus, stock_plot, lead_plot,
                        orders_plot, table, heat_plot, log, trace_state]
 
-        def _llm_token(api_token: str) -> str:
-            return (api_token or "").strip() or os.getenv("HF_TOKEN") or os.getenv("API_KEY") or ""
 
         def on_run(text, task_name, seed_value, news_choice, agent_choice, pause, use_random, model_name, api_token):
             def message(note: str):
@@ -1172,10 +1181,10 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             seed_int = int(seed_value) if seed_value is not None else 42
             key = ""
             if agent_choice in LLM_AGENTS:
-                key = _llm_token(api_token)
+                key = visitor_token(api_token)
                 if not key:
-                    yield message("⚠️ The LLM agents need a token: paste one under **LLM settings**, "
-                                  "or set the `HF_TOKEN` secret on the Space.")
+                    yield message("⚠️ The LLM agents need your own token: paste one under "
+                                  "**More options → LLM settings**.")
                     return
                 if agent_choice == AGENT_LLM_NEWS and news == 0:
                     yield message("⚠️ The hybrid agent only reads the news: switch **News** on.")
@@ -1235,7 +1244,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 return
             news = NEWS_LEVELS.get(news_choice, 0)
             n = max(1, min(int(n_seeds or 1), MAX_COMPARE_SEEDS))
-            key = _llm_token(api_token)
+            key = visitor_token(api_token)
             scores: Dict[str, List[float]] = {}
             notes: List[str] = []
             yield f"⏳ Running {len(chosen)} agent(s) on {n} episode(s) of **{task_name}**...", comparison_figure(empty), comparison_html(empty)

@@ -9,8 +9,8 @@ import pytest
 
 import inference
 from agents import BaselineAgent
-from models import PharmaAction
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryAction
+from server.inventory_environment import InventoryEnvironment
 from tasks import TEST_SEEDS
 
 # An SKU name followed by a number, e.g. `"insulin": 100` or `insulin (100)`:
@@ -19,13 +19,13 @@ SKU_WITH_NUMBER = re.compile(r"(insulin|paracetamol|bp_medication|vitamins|hydro
 
 
 def _played(days: int, seed: int = TEST_SEEDS[0]):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=seed)
     agent, history = BaselineAgent(), []
     for _ in range(days):
         day = obs.current_date
         reply, _ = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     return env, obs, history
 
@@ -61,7 +61,7 @@ def test_report_includes_inbound_units_and_days_of_cover():
 
 
 def test_days_of_cover_is_null_before_any_demand_is_seen():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0])
     report = inference.observation_to_dict(obs)
     assert all(sku["days_of_cover"] is None for sku in report["inventory"].values())

@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (exactly the locked versions)
+        run: uv sync --frozen --extra dev
+      - name: Tests
+        run: uv run python -m pytest -q tests
+      - name: The layout OpenEnv expects
+        run: uv run openenv validate .
+      - name: The command line and the example worlds
+        run: |
+          uv run inventorygym --version
+          uv run inventorygym check worlds/pharma.yaml
+          uv run inventorygym check examples/worlds/grocery.yaml
