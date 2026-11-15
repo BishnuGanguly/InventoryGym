@@ -82,7 +82,12 @@ if os.getenv("ENABLE_WEB_INTERFACE", "false").lower() in ("true", "1", "yes"):
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(url=f"{DASHBOARD_PATH}/{query}")
 
-    app = gr.mount_gradio_app(app, build_dashboard(), path=DASHBOARD_PATH, theme=gr.themes.Soft())
+    try:
+        from dashboard import THEME
+    except ModuleNotFoundError:
+        from server.dashboard import THEME
+
+    app = gr.mount_gradio_app(app, build_dashboard(), path=DASHBOARD_PATH, theme=THEME)
 
 
 def main():
