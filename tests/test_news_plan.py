@@ -9,8 +9,8 @@ import pytest
 
 import eval as E
 from agents import NewsPlanAgent, baseline_policy, news_plan_orders
-from models import InventoryState, NewsEvent, PharmaAction, SKUState, StoragePoolState
-from server.my_env_environment import PharmaEnvironment
+from models import InventoryState, NewsEvent, InventoryAction, SKUState, StoragePoolState
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS
 
 TASKS = sorted(TASK_REGISTRY)
@@ -116,7 +116,7 @@ def test_agent_without_news_plays_exactly_like_the_baseline(task_name):
 
 
 def test_agent_keeps_the_first_reported_lead_time_as_normal():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=TEST_SEEDS[0], news=1)
     agent = NewsPlanAgent()
     agent.start_episode(env)
@@ -124,7 +124,7 @@ def test_agent_keeps_the_first_reported_lead_time_as_normal():
     while not obs.done:
         reply, error = agent.act(obs, [])
         assert error is None
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
     assert agent._normal_lead_time == first
     assert obs.skus["insulin"].avg_lead_time > first["insulin"]      # delayed deliveries raised the average
     agent.start_episode(env)
@@ -149,7 +149,7 @@ def test_plan_wastes_less_than_the_extra_days_rule():
 
 
 def test_orders_are_valid_json_for_the_environment():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="epidemic_two_wave", seed=TEST_SEEDS[1], news=2, scenario="random")
     agent = E.make_agent("news_plan")
     agent.start_episode(env)
@@ -157,4 +157,4 @@ def test_orders_are_valid_json_for_the_environment():
         reply, _ = agent.act(obs, [])
         orders = json.loads(reply)
         assert all(sku in obs.skus and qty >= 1 for sku, qty in orders.items())
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))

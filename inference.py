@@ -49,8 +49,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
-from client import PharmaEnvClient
-from models import EpisodeConfig, InventoryState, PharmaAction
+from client import InventoryEnvClient
+from models import EpisodeConfig, InventoryState, InventoryAction
 from tasks import TASK_REGISTRY, compute_final_score
 
 # ---------------------------------------------------------------------------
@@ -831,10 +831,10 @@ async def run_episode(
     but the full list is retained internally for scoring and debugging.
     """
     if IMAGE_NAME:
-        env = await PharmaEnvClient.from_docker_image(IMAGE_NAME)
+        env = await InventoryEnvClient.from_docker_image(IMAGE_NAME)
     else:
         base_url = os.getenv("ENV_BASE_URL", "http://localhost:8000")
-        env = PharmaEnvClient(base_url=base_url)
+        env = InventoryEnvClient(base_url=base_url)
 
     # Per-episode state
     rewards:        List[float]                  = []
@@ -873,7 +873,7 @@ async def run_episode(
             )
 
             # Step the environment
-            action = PharmaAction(message=raw_action)
+            action = InventoryAction(message=raw_action)
             result = await env.step(action)
 
             reward   = result.reward if result.reward is not None else 0.0

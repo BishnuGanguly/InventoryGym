@@ -38,7 +38,7 @@ Each day the agent responds with a JSON object mapping SKU names to order quanti
 
 Only include SKUs you want to order. Send `{}` to place no orders today.
 
-The LLM prompt (`inference.py`, also used by `agents.LLMAgent`, `eval.py`, the dashboard and `PharmaEnvironment.to_llm_prompt()`) shows the report one SKU per line and adds two values computed from the observation: `inbound_units` (already ordered, not yet arrived) and `days_of_cover` ((on hand + inbound) ÷ recent daily demand). It shows the results of the last 3 days but not the model's own earlier replies, and its instructions contain no example quantities: small models tend to copy either one instead of reading the report.
+The LLM prompt (`inference.py`, also used by `agents.LLMAgent`, `eval.py`, the dashboard and `InventoryEnvironment.to_llm_prompt()`) shows the report one SKU per line and adds two values computed from the observation: `inbound_units` (already ordered, not yet arrived) and `days_of_cover` ((on hand + inbound) ÷ recent daily demand). It shows the results of the last 3 days but not the model's own earlier replies, and its instructions contain no example quantities: small models tend to copy either one instead of reading the report.
 
 **Three action formats for LLM agents** (`action=` in `agents.LLMAgent`, `--action` in `eval.py` and `local_llm/run_local_llm.py`):
 

@@ -22,7 +22,7 @@ RUN apt-get update && \
 
 # Build argument to control whether we're building standalone or in-repo
 ARG BUILD_MODE=in-repo
-ARG ENV_NAME=my_env
+ARG ENV_NAME=inventorygym
 
 # Copy environment code (always at root of build context)
 COPY . /app/env
@@ -71,7 +71,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Set PYTHONPATH so imports work correctly
 ENV PYTHONPATH="/app/env:$PYTHONPATH"
 
-# Serve the OpenEnv Gradio Playground at /web (the HF Space opens base_path /web).
+# Serve the dashboard at /dashboard/ (the page the HF Space opens) and the OpenEnv Playground at /web.
 # The benchmark API (/reset, /step, /state, /ws) is unaffected.
 ENV ENABLE_WEB_INTERFACE=true
 

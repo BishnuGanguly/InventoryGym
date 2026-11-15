@@ -1016,6 +1016,33 @@ wheels = [
 ]
 
 [[package]]
+name = "inventorygym"
+source = { editable = "." }
+dependencies = [
+    { name = "openai" },
+    { name = "openenv-core", extra = ["core"] },
+    { name = "plotly" },
+    { name = "pyyaml" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "openai", specifier = ">=1.0" },
+    { name = "openenv-core", extras = ["core"], specifier = ">=0.3.0" },
+    { name = "plotly", specifier = ">=5.20" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "jaraco-classes"
 version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1574,7 +1601,7 @@ wheels = [
 
 [[package]]
 name = "openenv-core"
-version = "0.2.3"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -1593,9 +1620,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/93/f3/41a5ed932a2507438c985e9d959dcaa1a6c46f293995c064348c0e52dd40/openenv_core-0.2.3.tar.gz", hash = "sha256:48aefd774474556297ce012b80f2ceb271db51253d7fd0838e6e2dcc329db0c3", size = 146944, upload-time = "2026-03-28T18:56:28.415Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/d6/3bebe8afb55fcc3ea9251c4c2dfbab2879e31089bc91a8fe9696e5ce019b/openenv_core-0.3.0.tar.gz", hash = "sha256:c7fee2035badab5be497eb6f4afb2cb417de000f82cc19afd72fb5ec332c431d", size = 164720, upload-time = "2026-05-11T11:37:57.274Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/22/38c339e370d198008f2c17ebdda1ae8f23bb4e1509dc7ae8eab6dc9b9cbe/openenv_core-0.2.3-py3-none-any.whl", hash = "sha256:f75a20c94452057a5f53a86e6d71a9f6a461524c3d6a865aa9344d257a92b795", size = 174557, upload-time = "2026-03-28T18:56:26.874Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/f5/aafa43138589bfd5d369a8d02ea365aae9d6fe55ac0b3894368d6d69bd03/openenv_core-0.3.0-py3-none-any.whl", hash = "sha256:859e875c9d5211b157c30fb9abc681606fcf0bf1b6ffcdf404678992823a1df0", size = 194313, upload-time = "2026-05-11T11:37:55.537Z" },
 ]
 
 [package.optional-dependencies]
@@ -1606,34 +1633,6 @@ core = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-
-[[package]]
-name = "openenv-my-env"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "openai" },
-    { name = "openenv-core", extra = ["core"] },
-    { name = "plotly" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-cov" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "openai", specifier = ">=1.0" },
-    { name = "openenv-core", extras = ["core"], specifier = ">=0.2.1" },
-    { name = "plotly", specifier = ">=5.20" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "opentelemetry-api"

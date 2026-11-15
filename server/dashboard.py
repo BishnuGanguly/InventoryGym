@@ -26,6 +26,7 @@ from __future__ import annotations
 import html
 import math
 import random
+import re
 import statistics
 import time
 from dataclasses import dataclass, field
@@ -40,17 +41,17 @@ import yaml
 import inference
 from agents import (Agent, BaselineAgent, History, LLMAgent, NewsLLMAgent, NewsPlanAgent, NewsRuleAgent,  # noqa: F401
                     NothingAgent, OracleAgent, baseline_policy)
-from models import EpisodeConfig, InventoryState, PharmaAction
+from models import EpisodeConfig, InventoryState, InventoryAction
 from news import find_events
 from tasks import PHARMA_WORLD, TEST_SEEDS, average_step_reward, get_task_config, weighted_fill
 from world import World, WorldError, default_world, load_world_text
 
 try:
-    from my_env_environment import PharmaEnvironment
+    from inventory_environment import InventoryEnvironment
     import world_forms as forms
     import world_wizard as wizard
 except ModuleNotFoundError:
-    from server.my_env_environment import PharmaEnvironment
+    from server.inventory_environment import InventoryEnvironment
     from server import world_forms as forms
     from server import world_wizard as wizard
 
@@ -274,7 +275,8 @@ def current_chip_html(world: World) -> str:
 def note_html(text: str, kind: str = "error") -> str:
     """A short message as a card ('error' or 'info')."""
     css = "ig-error" if kind == "error" else ""
-    return f'<div class="ig-card {css}">{html.escape(text)}</div>'
+    body = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(text))      # **bold**, as in the messages' source
+    return f'<div class="ig-card {css}">{body}</div>'
 
 
 def section_html(number: str, title: str, hint: str = "") -> str:
@@ -332,7 +334,7 @@ class EpisodeTrace:
 def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, news: int = 0,
                 scenario: str = "fixed") -> Iterator[EpisodeTrace]:
     """Play one episode, yielding the (same, growing) trace after reset and after every day."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name=task_name, seed=seed, news=news, scenario=scenario, world=world)
     if hasattr(agent, "start_episode"):
         agent.start_episode(env)
@@ -348,7 +350,7 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
         news_before = set(trace.rows[-1]["news"]) if trace.rows else set()
 
         reply, error = agent.act(obs, history)
-        obs = env.step(PharmaAction(message=reply))
+        obs = env.step(InventoryAction(message=reply))
 
         placed = [o for o in env._open_orders if o[2] == day]
         trace.orders.extend(placed)

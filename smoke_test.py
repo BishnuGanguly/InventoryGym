@@ -11,8 +11,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from server.my_env_environment import PharmaEnvironment
-from models import InventoryState, PharmaAction
+from server.inventory_environment import InventoryEnvironment
+from models import InventoryState, InventoryAction
 
 
 def pretty(obj: Any) -> str:
@@ -49,12 +49,12 @@ def assert_basic_invariants(state: InventoryState) -> None:
     print("  [invariants OK]")
 
 
-def run_direct_environment_smoke_test() -> PharmaEnvironment:
+def run_direct_environment_smoke_test() -> InventoryEnvironment:
     """
     Test the environment directly without HTTP.
     Fastest way to verify reset/step/state transitions.
     """
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
 
     # 1) Reset
     state = env.reset(seed=42)
@@ -68,25 +68,25 @@ def run_direct_environment_smoke_test() -> PharmaEnvironment:
     print(env.to_llm_prompt())
 
     # 3) Order nothing — empty action
-    no_order_action = PharmaAction(orders={})
+    no_order_action = InventoryAction(orders={})
     state = env.step(no_order_action)
     print_state("STATE AFTER EMPTY ORDER ({})", state)
     assert_basic_invariants(state)
 
     # 4) Order insulin (cold-chain SKU)
-    insulin_action = PharmaAction(orders={"insulin": 50.0})
+    insulin_action = InventoryAction(orders={"insulin": 50.0})
     state = env.step(insulin_action)
     print_state("STATE AFTER ORDERING 50 INSULIN", state)
     assert_basic_invariants(state)
 
     # 5) Order paracetamol (ambient SKU)
-    para_action = PharmaAction(orders={"paracetamol": 500.0})
+    para_action = InventoryAction(orders={"paracetamol": 500.0})
     state = env.step(para_action)
     print_state("STATE AFTER ORDERING 500 PARACETAMOL", state)
     assert_basic_invariants(state)
 
     # 6) Multi-SKU order
-    multi_action = PharmaAction(orders={
+    multi_action = InventoryAction(orders={
         "insulin":     100.0,
         "paracetamol": 300.0,
     })
@@ -97,13 +97,13 @@ def run_direct_environment_smoke_test() -> PharmaEnvironment:
     # 7) Parse action from raw LLM message string
     #    _parse_action extracts numeric values only — must be plain numbers, not tuples
     llm_message = '{"insulin": 40, "paracetamol": 300}'
-    llm_action = PharmaAction(message=llm_message)
+    llm_action = InventoryAction(message=llm_message)
     state = env.step(llm_action)
     print_state("STATE AFTER LLM MESSAGE ACTION (parsed from JSON string)", state)
     assert_basic_invariants(state)
 
     # 8) Malformed message — should fallback gracefully (no orders placed)
-    bad_action = PharmaAction(message="I would like to order some drugs please")
+    bad_action = InventoryAction(message="I would like to order some drugs please")
     state = env.step(bad_action)
     print_state("STATE AFTER MALFORMED LLM MESSAGE (should process with no orders)", state)
     assert_basic_invariants(state)
@@ -132,25 +132,25 @@ async def run_http_client_smoke_test() -> None:
         uvicorn server.app:app --host 127.0.0.1 --port 8000 --reload
     """
     try:
-        from client import PharmaEnvClient
+        from client import InventoryEnvClient
     except Exception as exc:
         print(f"\nSkipping client test: could not import client.py -> {exc}")
         return
 
-    client = PharmaEnvClient(base_url="http://127.0.0.1:8000")
+    client = InventoryEnvClient(base_url="http://127.0.0.1:8000")
     try:
         result = await client.reset()
         print_state("CLIENT RESET OBSERVATION", result.observation)
         assert_basic_invariants(result.observation)
 
         # Order insulin via client
-        action = PharmaAction(orders={"insulin": 50.0})
+        action = InventoryAction(orders={"insulin": 50.0})
         result = await client.step(action)
         print_state("CLIENT STEP AFTER ORDERING INSULIN", result.observation)
         assert_basic_invariants(result.observation)
 
         # Multi-SKU order via client
-        action = PharmaAction(orders={
+        action = InventoryAction(orders={
             "paracetamol": 400.0,
             "insulin":     150.0,
         })
@@ -159,24 +159,24 @@ async def run_http_client_smoke_test() -> None:
         assert_basic_invariants(result.observation)
 
         # ordering insulin again to test cold storage capacity limits
-        action = PharmaAction(orders={"insulin":50.0})
+        action = InventoryAction(orders={"insulin":50.0})
         result = await client.step(action)
         print("the result returned from the client is of type ", type(result))
         print("the raw result returned from the client is ", result)
         print_state("CLIENT STEP AFTER ORDERING INSULIN AGAIN", result.observation)
         assert_basic_invariants(result.observation)
         #three empty to deplete the cold storage.
-        action = PharmaAction(orders={"insulin": 0.0})
+        action = InventoryAction(orders={"insulin": 0.0})
         result = await client.step(action)
         print_state("CLIENT STEP AFTER 1ST EMPTY ORDER (depleting cold storage)", result.observation)
         assert_basic_invariants(result.observation)
 
-        action = PharmaAction(orders={"insulin": 0.0})
+        action = InventoryAction(orders={"insulin": 0.0})
         result = await client.step(action)
         print_state("CLIENT STEP AFTER 2ND EMPTY ORDER (depleting cold storage)", result.observation)
         assert_basic_invariants(result.observation)
         
-        action = PharmaAction(orders={"insulin": 0.0})
+        action = InventoryAction(orders={"insulin": 0.0})
         result = await client.step(action)
         print_state("CLIENT STEP AFTER 3 EMPTY ORDERS (depleting cold storage)", result.observation)
         assert_basic_invariants(result.observation)

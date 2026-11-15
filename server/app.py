@@ -1,9 +1,9 @@
 """
-FastAPI application for the Pharmaceutical Warehouse Procurement Environment.
+FastAPI application for InventoryGym.
 
 Endpoints:
     POST /reset   — Reset the environment, returns initial InventoryState
-    POST /step    — Execute a PharmaAction, returns updated InventoryState
+    POST /step    — Execute a InventoryAction, returns updated InventoryState
     GET  /state   — Get current OpenEnv State (episode_id, step_count)
     GET  /schema  — Get action/observation JSON schemas
     WS   /ws      — WebSocket endpoint for persistent sessions
@@ -19,15 +19,14 @@ Usage:
     python -m server.app
 """
 
-#from OpenEnv.envs.browsergym_env import models
 import os
 import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parent          # .../pharma_coldstorage_env/server
-PACKAGE_ROOT = ROOT.parent                      # .../pharma_coldstorage_env
-sys.path.insert(0, str(ROOT))                   # finds my_env_environment.py
+ROOT = Path(__file__).resolve().parent          # .../server
+PACKAGE_ROOT = ROOT.parent                      # the project folder
+sys.path.insert(0, str(ROOT))                   # finds inventory_environment.py
 sys.path.insert(0, str(PACKAGE_ROOT))           # finds models.py, tasks.py, client.py
 
 try:
@@ -38,12 +37,11 @@ except Exception as e:
     ) from e
 
 try:
-   
-    from models import InventoryState, PharmaAction
-    from my_env_environment import PharmaEnvironment
+    from models import InventoryState, InventoryAction
+    from inventory_environment import InventoryEnvironment
 except ModuleNotFoundError:
-    from models import InventoryState, PharmaAction
-    from server.my_env_environment import PharmaEnvironment
+    from models import InventoryState, InventoryAction
+    from server.inventory_environment import InventoryEnvironment
 
 
 def build_dashboard(*args):
@@ -55,13 +53,22 @@ def build_dashboard(*args):
     return _build(*args)
 
 
+ENV_NAME = "inventorygym"
+# How many agents can hold a session at the same time. Each session gets its own environment,
+# so they never share an episode. A further session is refused until one of them closes.
+MAX_CONCURRENT_ENVS = max(1, int(os.getenv("MAX_CONCURRENT_ENVS", "8")))
+
 app = create_app(
-    PharmaEnvironment,
-    PharmaAction,
+    InventoryEnvironment,
+    InventoryAction,
     InventoryState,
-    env_name="pharma_env",
-    max_concurrent_envs=1,
+    env_name=ENV_NAME,
+    max_concurrent_envs=MAX_CONCURRENT_ENVS,
     gradio_builder=build_dashboard,
+    # At /web the dashboard is the first tab, under its own name; the Playground comes second.
+    custom_tab_name="Dashboard",
+    custom_tab_primary=True,
+    title_override="InventoryGym",
 )
 
 

@@ -94,7 +94,7 @@ def test_rendering_works_before_and_after_a_run():
 
 
 def test_build_dashboard_returns_blocks():
-    assert isinstance(build_dashboard(None, None, None, False, "pharma_env", ""), gr.Blocks)
+    assert isinstance(build_dashboard(None, None, None, False, "inventorygym", ""), gr.Blocks)
 
 
 # ---------------------------------------------------------------------------

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from models import EpisodeConfig, PharmaAction, SKUEpisodeConfig
-from server.my_env_environment import PharmaEnvironment
+from models import EpisodeConfig, InventoryAction, SKUEpisodeConfig
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, compute_final_score, get_task_config
 
 
@@ -52,29 +52,29 @@ def _two_pool_config(insulin_waste_penalty: float = 10.0, vitamins_waste_penalty
 
 def _deliver(cfg: EpisodeConfig, orders: dict):
     """Order on day 0; with a 1-day lead time everything arrives on day 1."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(episode_config=cfg)
-    env.step(PharmaAction(orders=orders))
-    return env.step(PharmaAction())
+    env.step(InventoryAction(orders=orders))
+    return env.step(InventoryAction())
 
 
 def test_reset_accepts_config_dict():
     """Over HTTP/WS the config arrives as plain JSON, not as a model instance."""
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     cfg = get_task_config("flu_season", seed=1)
     state = env.reset(episode_config=cfg.model_dump(mode="json"), seed=1)
     assert set(state.skus) == set(cfg.skus)
 
 
 def test_reset_by_task_name_is_reproducible():
-    a = PharmaEnvironment().reset(task_name="epidemic_two_wave", seed=7)
-    b = PharmaEnvironment().reset(task_name="epidemic_two_wave", seed=7)
+    a = InventoryEnvironment().reset(task_name="epidemic_two_wave", seed=7)
+    b = InventoryEnvironment().reset(task_name="epidemic_two_wave", seed=7)
     assert a.model_dump() == b.model_dump()
 
 
 def test_reset_unknown_task_name():
     with pytest.raises(ValueError, match="Unknown task"):
-        PharmaEnvironment().reset(task_name="nope")
+        InventoryEnvironment().reset(task_name="nope")
 
 
 @pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
@@ -94,58 +94,58 @@ def test_tasks_are_seeded(task_name):
     ],
 )
 def test_bad_actions_do_not_crash(message):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(seed=0)
-    state = env.step(PharmaAction(message=message))
+    state = env.step(InventoryAction(message=message))
     assert state.current_date == 1
 
 
 def test_sku_names_are_case_insensitive_and_strings_accepted():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(episode_config=_deterministic_config())
-    state = env.step(PharmaAction(message='Here you go: {"INSULIN": "40"}'))
+    state = env.step(InventoryAction(message='Here you go: {"INSULIN": "40"}'))
     assert [(s, q) for s, q, _ in state.expected_inbound_orders] == [("insulin", 40.0)]
 
 
 def test_same_day_arrivals_are_not_lost():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     cfg = _deterministic_config(lead_time=3.0)
     env.reset(episode_config=cfg)
-    env.step(PharmaAction(orders={"insulin": 100.0}))   # day 0, arrives day 3
+    env.step(InventoryAction(orders={"insulin": 100.0}))   # day 0, arrives day 3
     cfg.skus["insulin"].base_lead_time = 2.0
     env._episode_config = cfg
-    env.step(PharmaAction(orders={"insulin": 100.0}))   # day 1, arrives day 3
-    env.step(PharmaAction())
-    state = env.step(PharmaAction())                    # day 3: both arrive
+    env.step(InventoryAction(orders={"insulin": 100.0}))   # day 1, arrives day 3
+    env.step(InventoryAction())
+    state = env.step(InventoryAction())                    # day 3: both arrive
     # 50 start + 200 delivered - 4 days * 10 demand
     assert state.skus["insulin"].inventory_on_hand == pytest.approx(210.0)
     assert state.inventory_excess_today == 0.0
 
 
 def test_lead_time_revealed_only_on_delivery():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(episode_config=_deterministic_config(lead_time=3.0))
-    state = env.step(PharmaAction(orders={"insulin": 10.0}))
+    state = env.step(InventoryAction(orders={"insulin": 10.0}))
     assert state.skus["insulin"].lead_time_last3_orders == []
-    env.step(PharmaAction())
-    env.step(PharmaAction())
-    state = env.step(PharmaAction())                    # delivered on day 3
+    env.step(InventoryAction())
+    env.step(InventoryAction())
+    state = env.step(InventoryAction())                    # delivered on day 3
     assert state.skus["insulin"].lead_time_last3_orders == [3.0]
     assert state.actual_inbound_orders == []
 
 
 def test_overflow_is_recorded_as_waste():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(episode_config=_deterministic_config(lead_time=1.0))
-    env.step(PharmaAction(orders={"insulin": 5000.0}))  # capacity is 1000
-    state = env.step(PharmaAction())
+    env.step(InventoryAction(orders={"insulin": 5000.0}))  # capacity is 1000
+    state = env.step(InventoryAction())
     assert state.inventory_excess_today > 0
     assert state.skus["insulin"].inventory_on_hand <= 1000.0
     assert state.reward < 1.0
 
 
 def test_full_episode_scores_in_unit_range():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     cfg = get_task_config("supply_chain_broken", seed=0)
     state = env.reset(episode_config=cfg, seed=0)
     steps = 0
@@ -155,21 +155,21 @@ def test_full_episode_scores_in_unit_range():
             for sku_id, sku in state.skus.items()
             if sku.stockout_days_if_no_reorder < 6
         }
-        state = env.step(PharmaAction(orders=orders))
+        state = env.step(InventoryAction(orders=orders))
         steps += 1
         assert -1.0 < state.reward <= 1.0
     assert steps == cfg.no_of_days
     assert 0.0 <= compute_final_score(state, cfg) <= 1.0
     with pytest.raises(RuntimeError):
-        env.step(PharmaAction())
+        env.step(InventoryAction())
 
 
 def test_orders_accept_json_string():
     """The /web Playground sends the Orders box as a string."""
-    assert PharmaAction(orders='{"insulin": 25}').orders == {"insulin": 25.0}
-    assert PharmaAction(orders="  ").orders == {}
+    assert InventoryAction(orders='{"insulin": 25}').orders == {"insulin": 25.0}
+    assert InventoryAction(orders="  ").orders == {}
     with pytest.raises(ValueError, match="JSON object"):
-        PharmaAction(orders="not json")
+        InventoryAction(orders="not json")
 
 
 def test_waste_fraction_is_share_of_delivery():
@@ -232,7 +232,7 @@ def test_tasks_give_every_sku_a_waste_penalty(task_name):
 )
 def test_overflowing_deliveries_fill_the_free_space(orders, demand, expected_stored):
     """Regression: oversized deliveries used to be rejected entirely instead of filling free space."""
-    accepted, wasted = PharmaEnvironment()._allocate_pool(orders, 1000.0, demand)
+    accepted, wasted = InventoryEnvironment()._allocate_pool(orders, 1000.0, demand)
     assert accepted == pytest.approx(expected_stored)
     assert sum(accepted.values()) == pytest.approx(1000.0)
     for sku_id, qty in orders:
@@ -288,11 +288,11 @@ def test_perfect_foresight_plan_fits_in_storage(task_name):
 
 
 def test_hoarding_insulin_overflows_cold_storage():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     state = env.reset(task_name="flu_season", seed=0)
     month_of_insulin = 30 * env._episode_config.skus["insulin"].base_demand
     for _ in range(10):   # lead time is at most ~6 days, so the order lands within 10 days
-        state = env.step(PharmaAction(orders={"insulin": month_of_insulin} if state.current_date == 0 else {}))
+        state = env.step(InventoryAction(orders={"insulin": month_of_insulin} if state.current_date == 0 else {}))
         if state.inventory_excess_today > 0:
             break
     assert state.inventory_excess_today > 0
@@ -305,11 +305,11 @@ def test_hoarding_insulin_overflows_cold_storage():
 # ---------------------------------------------------------------------------
 
 def _play(task_name: str, seed: int, policy):
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     state = env.reset(task_name=task_name, seed=seed)
     rewards = []
     while not state.done:
-        state = env.step(PharmaAction(orders=policy(state)))
+        state = env.step(InventoryAction(orders=policy(state)))
         rewards.append(state.reward)
     return state, env._episode_config, rewards
 
@@ -344,12 +344,12 @@ def test_reckless_over_ordering_scores_below_sensible_ordering():
 
 
 def test_partial_episode_counts_unplayed_days_as_zero():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     state = env.reset(task_name="flu_season", seed=1)
     cfg = env._episode_config
     rewards = []
     for _ in range(10):
-        state = env.step(PharmaAction(orders=_order_up_to(state)))
+        state = env.step(InventoryAction(orders=_order_up_to(state)))
         rewards.append(state.reward)
     assert compute_final_score(state, cfg) == pytest.approx(max(0.0, sum(rewards)) / cfg.no_of_days)
 
@@ -388,10 +388,10 @@ def test_same_seed_same_world_whatever_the_agent_does(task_name):
 
 def test_lead_time_of_an_order_does_not_depend_on_earlier_orders():
     def arrival_of_day5_paracetamol_order(seed: int, early_orders: dict) -> int:
-        env = PharmaEnvironment()
+        env = InventoryEnvironment()
         env.reset(task_name="flu_season", seed=seed)
         for day in range(6):
-            env.step(PharmaAction(orders=early_orders if day < 5 else {"paracetamol": 100.0}))
+            env.step(InventoryAction(orders=early_orders if day < 5 else {"paracetamol": 100.0}))
         (arrival,) = [a for sku, _, d, a in env._open_orders if sku == "paracetamol" and d == 5]
         return arrival
     # Lead times are whole days, so one seed can match by luck; check many.

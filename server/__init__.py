@@ -1,11 +1,5 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of this source tree.
+"""InventoryGym server: the environment, the FastAPI app and the dashboard."""
 
-"""My Env environment server components."""
+from .inventory_environment import InventoryEnvironment, PharmaEnvironment
 
-from .my_env_environment import PharmaEnvironment
-
-__all__ = ["PharmaEnvironment"]
+__all__ = ["InventoryEnvironment", "PharmaEnvironment"]

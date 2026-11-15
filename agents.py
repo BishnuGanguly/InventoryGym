@@ -7,7 +7,7 @@ Every agent has the same interface:
     agent.start_episode(env)            # called once, right after env.reset()
     reply, error = agent.act(obs, history)
 
-`reply` is the text sent as PharmaAction(message=reply); `error` is None or a
+`reply` is the text sent as InventoryAction(message=reply); `error` is None or a
 description of what went wrong (e.g. a failed LLM call). `history` is the list of
 (day, reply, feedback) tuples from earlier days, as built in inference.py.
 

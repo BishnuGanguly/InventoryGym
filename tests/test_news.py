@@ -10,9 +10,9 @@ import pytest
 import eval as E
 import inference
 from agents import MAX_COVER_DAYS, NewsLLMAgent, NewsRuleAgent, baseline_lead_time, baseline_policy
-from models import PharmaAction
+from models import InventoryAction
 from news import ANNOUNCE_DAYS_AHEAD, add_news, find_events, visible_news
-from server.my_env_environment import PharmaEnvironment
+from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS, get_task_config
 
 SEED = TEST_SEEDS[0]
@@ -83,13 +83,13 @@ def test_news_never_changes_the_world(task_name):
 
 
 def test_observation_shows_news_from_publication_to_end():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=SEED, news=1)
     event = env._episode_config.news[0]
     seen = {}
     while not obs.done:
         seen[obs.current_date] = list(obs.news)
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     for day, items in seen.items():
         shown = any(item == f"Day {event.announce_day}: {event.message}" for item in items)
         assert shown == (event.announce_day <= day <= event.end_day)
@@ -97,7 +97,7 @@ def test_observation_shows_news_from_publication_to_end():
 
 
 def test_report_includes_news_only_when_there_is_some():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     assert "news" not in inference.observation_to_dict(env.reset(task_name="flu_season", seed=SEED))
     obs = env.reset(task_name="epidemic_two_wave", seed=SEED, news=2)
     assert inference.observation_to_dict(obs)["news"] == obs.news
@@ -108,10 +108,10 @@ def test_report_includes_news_only_when_there_is_some():
 # ---------------------------------------------------------------------------
 
 def test_extra_days_are_capped_for_storage():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=SEED)
     for _ in range(5):
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     plain = baseline_policy(obs)
     huge = baseline_policy(obs, extra_days={"paracetamol": 1000, "vitamins": -5})
     sku = obs.skus["paracetamol"]
@@ -143,20 +143,20 @@ def test_news_llm_agent_only_calls_the_model_on_news_days(monkeypatch):
 
 def test_news_llm_agent_without_news_is_the_baseline():
     client, calls = fake_client()
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=SEED)
     for _ in range(4):
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     agent = NewsLLMAgent("stub", "x", "x", client=client)
     reply, error = agent.act(obs, [])
     assert json.loads(reply) == baseline_policy(obs) and error is None and calls == []
 
 
 def test_news_llm_agent_applies_the_reply_and_survives_failures():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=SEED, news=1)
     while not obs.news:
-        obs = env.step(PharmaAction(message=json.dumps(baseline_policy(obs))))
+        obs = env.step(InventoryAction(message=json.dumps(baseline_policy(obs))))
     client, _ = fake_client('Insulin needs more: {"insulin": 5, "paracetamol": 0}')
     reply, error = NewsLLMAgent("stub", "x", "x", client=client).act(obs, [])
     assert error is None and json.loads(reply) == baseline_policy(obs, extra_days={"insulin": 5})
@@ -166,13 +166,13 @@ def test_news_llm_agent_applies_the_reply_and_survives_failures():
 
 
 def test_parse_extra_days_accepts_aliases_and_skips_junk():
-    obs = PharmaEnvironment().reset(task_name="flu_season", seed=SEED)
+    obs = InventoryEnvironment().reset(task_name="flu_season", seed=SEED)
     reply = {"Insulin": 3, "amlodipine": "2.5", "HCQ": 4, "vitamins": True, "paracetamol": "nan", "x": 1}
     assert inference.parse_extra_days(obs, reply) == {"insulin": 3.0, "bp_medication": 2.5, "hydroxychloroquine": 4.0}
 
 
 def test_rule_agent_reads_events_from_the_environment():
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     env.reset(task_name="flu_season", seed=SEED, news=2)
     agent = NewsRuleAgent()
     agent.start_episode(env)
@@ -194,10 +194,10 @@ def test_news_prompt_has_no_example_answer():
 
     assert not SKU_WITH_NUMBER.search(inference.NEWS_SYSTEM_PROMPT)
     assert '{"<product_name>": <extra_days>' in inference.NEWS_SYSTEM_PROMPT
-    env = PharmaEnvironment()
+    env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], news=2)
     while not obs.news:
-        obs = env.step(PharmaAction(message="{}"))
+        obs = env.step(InventoryAction(message="{}"))
     prompt = inference.build_news_prompt(obs)
     assert not SKU_WITH_NUMBER.search(prompt[prompt.index("Extra days"):])
 
