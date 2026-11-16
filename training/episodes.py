@@ -1,7 +1,7 @@
 """
 Full episodes with a local model, many at once: on each day every unfinished episode
 asks the model for its answer, and all those prompts go to the model as one batch.
-This plays exactly like eval.run_episode with the `llm` agent in the `adjust` format
+This plays exactly like eval.run_episode with the `llm` policy in the `adjust` format
 (the same prompt, the same conversion of the answer into an order), but makes 60
 batched calls instead of 60 calls per episode.
 
@@ -17,7 +17,7 @@ import json
 from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 import inference
-from agents import Agent, baseline_policy
+from policies import Policy, baseline_policy
 from eval import JSON_OBJECT
 from models import InventoryState, InventoryAction
 from server.inventory_environment import InventoryEnvironment
@@ -28,19 +28,19 @@ History = List[Tuple[int, str, str]]
 
 
 def adjust_messages(obs: InventoryState, history: History) -> List[Dict[str, str]]:
-    """The chat messages agents.LLMAgent sends in the `adjust` format."""
+    """The chat messages policies.LLMPolicy sends in the `adjust` format."""
     report = inference.observation_to_dict(obs, include_cover=False)
     user = inference.build_user_prompt(report, history, step=obs.current_date + 1)
     return [{"role": "system", "content": inference.system_prompt(obs)}, {"role": "user", "content": user}]
 
 
 def answer_to_order(obs: InventoryState, text: str) -> str:
-    """The order LLMAgent sends for a model answer in the `adjust` format."""
+    """The order LLMPolicy sends for a model answer in the `adjust` format."""
     extra = inference.adjust_days(obs, inference.parse_json_object(text))
     return json.dumps(baseline_policy(obs, extra_days=extra, min_extra=inference.ADJUST_DAYS_RANGE[0]))
 
 
-class FlatExtraAgent(Agent):
+class FlatExtraPolicy(Policy):
     """The baseline with the same extra days on every SKU, every day ("+3 everywhere")."""
 
     def __init__(self, days: float = 3.0) -> None:
@@ -55,7 +55,7 @@ def run_llm_episodes(
     seeds: Sequence[int],
     generate: Generate,
     insights: bool = True,
-    agent: str = "llm",
+    policy: str = "llm",
     model: str = "",
     split: str = "test",
     save_replies: bool = False,
@@ -94,7 +94,7 @@ def run_llm_episodes(
     for r in runs:
         days = len(r["history"])
         record = {
-            "agent": agent, "model": model or None, "action_format": "adjust",
+            "policy": policy, "model": model or None, "action_format": "adjust",
             "task": r["task"], "seed": r["seed"], "split": split, "insights": insights,
             "score": round(compute_final_score(r["obs"], r["env"]._episode_config), 6),
             "avg_fill": round(r["fill"] / days, 6) if days else 0.0,
@@ -108,21 +108,21 @@ def run_llm_episodes(
     return records
 
 
-def run_rule_episodes(agent: Agent, name: str, tasks: Sequence[str], seeds: Sequence[int], insights: bool = True,
+def run_rule_episodes(policy: Policy, name: str, tasks: Sequence[str], seeds: Sequence[int], insights: bool = True,
                       split: str = "test") -> List[Dict[str, Any]]:
-    """Score records for a rule-based agent object (one not in eval.make_agent, e.g. FlatExtraAgent)."""
+    """Score records for a rule-based policy object (one not in eval.make_policy, e.g. FlatExtraPolicy)."""
     records = []
     for task in tasks:
         for seed in seeds:
             env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, insights=insights)
-            agent.start_episode(env)
+            policy.start_episode(env)
             history: History = []
             while not obs.done:
                 day = obs.current_date
-                reply, _ = agent.act(obs, history)
+                reply, _ = policy.act(obs, history)
                 obs = env.step(InventoryAction(message=reply))
                 history.append((day, reply, inference.build_feedback(obs)))
-            records.append({"agent": name, "task": task, "seed": seed, "split": split, "insights": insights,
+            records.append({"policy": name, "task": task, "seed": seed, "split": split, "insights": insights,
                             "score": round(compute_final_score(obs, env._episode_config), 6)})
     return records

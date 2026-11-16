@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.0.0
+
+"Agent" is now "policy" everywhere.
+
+Nothing here is an AI agent in today's sense of the word: three of the four choices in the
+dashboard are fixed rules, and the language model makes one call a day and returns a few
+numbers that a rule turns into an order. "Policy" is the word both reinforcement learning
+and inventory management use for a rule that maps what you see to what you order.
+
+### Changed (breaking)
+- `--agent` is `--policy` in `eval.py` and the local runner, `agents.py` is `policies.py`, and
+  the classes are `BaselinePolicy`, `OraclePolicy`, `LLMPolicy`, `InsightsPlanPolicy`,
+  `TeacherPolicy` and so on. Result files have a `policy` field where they had `agent`.
+- The README, the docs and the dashboard say policy ("Run a policy", "Compare policies").
+- Not changed: the prompt a model reads still opens "You are a ... procurement agent", which
+  is a job title. Scores are the same.
+
 ## 3.0.0
 
 Two options are gone: there is one way to make an episode different per seed, and one
@@ -12,7 +29,7 @@ way a language model answers.
   other world's: `surprise_delays`, `surprise_outbreak`, `surprise_epidemic`. Training and the
   teacher use them by default (`tasks.SURPRISE_TASKS`). They follow the old scenario's design
   with slightly different ranges, so they are new episodes.
-- **The `units` and `days` answer formats.** An LLM agent always answers with extra days of
+- **The `units` and `days` answer formats.** An LLM policy always answers with extra days of
   stock on top of the baseline's order. `--action` is removed, `inference.SYSTEM_PROMPT` is
   that prompt, and `system_prompt()` and `build_user_prompt()` take no format. The
   environment's own action is unchanged: it still takes units per product.
@@ -33,14 +50,14 @@ way a language model answers.
 ### Changed (breaking)
 - **The word.** Every `news` name is now `insights`: the observation field (`obs.insights`),
   the `reset(insights=...)` parameter, the `--insights` flag, the `insights:` section of a world
-  file, the module `insights.py`, and the agents `insights_plan`, `baseline_insights` and
+  file, the module `insights.py`, and the policies `insights_plan`, `baseline_insights` and
   `llm_insights`. The prompts a model reads say "insights" too, so a model trained on the old
   prompts should be retrained.
 - **No levels.** Insights are on or off (`insights=True`, `--insights`). The old level 1, one
   fixed template with exact days, is removed; "on" is what level 2 was.
 - **A simpler dashboard.** One Insights switch replaces the Off / Exact / Natural choice. Four
-  agents are offered instead of seven (baseline, insights plan, oracle, LLM), and the
-  pharma-only "random scenario" checkbox is gone. The other agents remain in `eval.py`.
+  policies are offered instead of seven (baseline, insights plan, oracle, LLM), and the
+  pharma-only "random scenario" checkbox is gone. The other policies remain in `eval.py`.
 
 Scores are unchanged: with insights on, every seed has the same announcements, the same
 wording and the same result as level 2 had.
@@ -60,7 +77,7 @@ The project is now InventoryGym in the code as well as in the name.
 - **OpenEnv 0.3.** At `/web` the dashboard is the first tab, named *Dashboard*, and the page is
   titled InventoryGym. `/metadata` describes the environment. `openenv.yaml` has the fields
   `openenv validate` and `openenv push` read.
-- **Sessions.** Up to 8 agents can hold a session at the same time (it was 1); set
+- **Sessions.** Up to 8 policies can hold a session at the same time (it was 1); set
   `MAX_CONCURRENT_ENVS` to change it. Each session has its own environment and episode.
 
 ### Added
@@ -73,4 +90,4 @@ The project is now InventoryGym in the code as well as in the name.
   `HF_TOKEN` / `API_KEY` secret of the server, so on a public Space any visitor could run any
   model on the owner's account. An LLM run now needs a token pasted for that run.
 
-Scores are unchanged: every agent gives the same result on the same seed as before.
+Scores are unchanged: every policy gives the same result on the same seed as before.

@@ -28,10 +28,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
-from agents import Agent, BaselineAgent, baseline_policy  # noqa: E402
+from policies import Policy, BaselinePolicy, baseline_policy  # noqa: E402
 from models import InventoryState, InventoryAction  # noqa: E402
 from server.inventory_environment import InventoryEnvironment  # noqa: E402
-from training.teacher import TeacherAgent  # noqa: E402
+from training.teacher import TeacherPolicy  # noqa: E402
 
 HORIZON = 15             # days played forward per answer
 FUTURES = 4              # possible futures per prompt, shared by every answer to it
@@ -58,13 +58,13 @@ class DayPrompt:
     states: str = "baseline"    # who played the earlier days (one of PLAYERS)
 
 
-def player(name: str, env: InventoryEnvironment) -> Agent:
-    """The rule agent called `name`, ready to play `env`'s episode."""
+def player(name: str, env: InventoryEnvironment) -> Policy:
+    """The rule policy called `name`, ready to play `env`'s episode."""
     if name not in PLAYERS:
         raise ValueError(f"player must be one of {PLAYERS}, not {name!r}")
-    agent = TeacherAgent() if name == "teacher" else BaselineAgent()
-    agent.start_episode(env)
-    return agent
+    policy = TeacherPolicy() if name == "teacher" else BaselinePolicy()
+    policy.start_episode(env)
+    return policy
 
 
 # ---------------------------------------------------------------------------
@@ -74,24 +74,24 @@ def player(name: str, env: InventoryEnvironment) -> Agent:
 def build_state(prompt: DayPrompt) -> Tuple[InventoryEnvironment, InventoryState, History]:
     """
     The environment on `prompt.day`, reached by letting `prompt.states` (the baseline,
-    or the teacher) play every earlier day, and the action history an LLM agent would
+    or the teacher) play every earlier day, and the action history an LLM policy would
     have (as in eval.run_episode). Deterministic: the same prompt always gives the same state.
     """
     env = InventoryEnvironment()
     obs = env.reset(task_name=prompt.task, seed=prompt.seed, insights=prompt.insights)
-    agent, history = player(prompt.states, env), []
+    policy, history = player(prompt.states, env), []
     while obs.current_date < prompt.day:
         if obs.done:
             raise ValueError(f"day {prompt.day} is past the end of the episode")
         day = obs.current_date
-        reply, _ = agent.act(obs, history)
+        reply, _ = policy.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     return env, obs, history
 
 
 def prompt_messages(prompt: DayPrompt) -> List[Dict[str, str]]:
-    """The chat messages agents.LLMAgent sends on that day in the `adjust` format."""
+    """The chat messages policies.LLMPolicy sends on that day in the `adjust` format."""
     _, obs, history = build_state(prompt)
     report = inference.observation_to_dict(obs, include_cover=False)
     user = inference.build_user_prompt(report, history, step=obs.current_date + 1)
@@ -114,11 +114,11 @@ def insights_day_prompts(
         for seed in seeds:
             env = InventoryEnvironment()
             obs = env.reset(task_name=task, seed=seed, insights=insights)
-            agent = player(states, env)
+            policy = player(states, env)
             while not obs.done:
                 if obs.insights:
                     prompts.append(DayPrompt(task, seed, obs.current_date, insights, states))
-                obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
+                obs = env.step(InventoryAction(message=policy.act(obs, [])[0]))
     return prompts
 
 

@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import inference
-from agents import LLMAgent, InsightsLLMAgent
+from policies import LLMPolicy, InsightsLLMPolicy
 from models import InventoryState, InventoryAction
 from server.inventory_environment import InventoryEnvironment
 from tasks import PHARMA_WORLD, FIXED_TASKS, get_task_config
@@ -197,7 +197,7 @@ def test_answers_may_use_a_products_name_or_alias():
     assert inference.parse_extra_days(pharma, {"HCQ": 2, "amlodipine": 1}) == {"hydroxychloroquine": 2.0, "bp_medication": 1.0}
 
 
-def test_agents_send_the_worlds_prompts():
+def test_policies_send_the_worlds_prompts():
     sent = []
 
     def create(**kwargs):
@@ -208,8 +208,8 @@ def test_agents_send_the_worlds_prompts():
     env, obs = reset(GROCERY, "holiday_rush")
     while not obs.insights:
         obs = env.step(InventoryAction(message="{}"))
-    LLMAgent("stub", "x", "x", client=client).act(obs, [])
-    InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    LLMPolicy("stub", "x", "x", client=client).act(obs, [])
+    InsightsLLMPolicy("stub", "x", "x", client=client).act(obs, [])
     assert sent[0][0]["content"] == inference.system_prompt(obs)
     assert sent[1][0]["content"] == inference.insights_system_prompt(obs)
     assert "grocery store" in sent[0][0]["content"] and "grocery store" in sent[1][0]["content"]

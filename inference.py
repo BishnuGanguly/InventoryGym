@@ -72,7 +72,7 @@ SUCCESS_THRESHOLD = 0.80
 # System prompt
 # ---------------------------------------------------------------------------
 
-# Who the agent is, the warehouse, and the report fields.
+# Who the policy is, the warehouse, and the report fields.
 _PROMPT_INTRO = textwrap.dedent("""
     You are a pharmaceutical warehouse procurement agent managing a cold-chain inventory over a multi-day episode.
 
@@ -204,7 +204,7 @@ def log_end(
 # ---------------------------------------------------------------------------
 
 def inbound_units_by_sku(obs: InventoryState) -> Dict[str, float]:
-    """Units ordered but not yet arrived, per SKU (from the agent-visible expected orders)."""
+    """Units ordered but not yet arrived, per SKU (from the policy-visible expected orders)."""
     inbound = {sku_id: 0.0 for sku_id in obs.skus}
     for sku_id, qty, _ in obs.expected_inbound_orders:
         inbound[sku_id] = inbound.get(sku_id, 0.0) + qty
@@ -270,7 +270,7 @@ def storage_report(obs: InventoryState) -> Dict[str, Any]:
 def observation_to_dict(obs: InventoryState, include_cover: bool = True) -> Dict[str, Any]:
     """
     Convert InventoryState to a clean dict for the LLM prompt.
-    Shows only what the agent may observe, plus two values computed from it
+    Shows only what the policy may observe, plus two values computed from it
     (inbound_units, days_of_cover) so a model does not have to do that
     arithmetic itself. Hidden ground truth is never included.
 
@@ -340,7 +340,7 @@ def format_report(obs_dict: Dict[str, Any]) -> str:
 
 
 def build_feedback(obs: InventoryState) -> str:
-    """Summarise the outcome of the last step for the agent's action history."""
+    """Summarise the outcome of the last step for the policy's action history."""
     fill = {
         sku_id: round(sku.demand_fulfilled_today, 2)
         for sku_id, sku in obs.skus.items()
@@ -396,7 +396,7 @@ def build_user_prompt(
       1. The current inventory report (today's state)
       2. The action history (what has happened so far this episode)
 
-    The history gives the agent memory across steps without requiring
+    The history gives the policy memory across steps without requiring
     the LLM to maintain its own internal state.
     """
     parts = [f"Day {obs_dict['day']} — Step {step}"]
@@ -432,7 +432,7 @@ def parse_json_object(text: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Insights adviser (hybrid agent): the LLM reads the insights, the baseline does the maths
+# Insights adviser (hybrid policy): the LLM reads the insights, the baseline does the maths
 # ---------------------------------------------------------------------------
 
 INSIGHTS_SYSTEM_PROMPT = textwrap.dedent("""
@@ -620,7 +620,7 @@ def build_insights_prompt(obs: InventoryState) -> str:
 def parse_extra_days(obs: InventoryState, reply: Dict[str, Any]) -> Dict[str, float]:
     """
     Extra days per SKU from a parsed reply: SKU names (or aliases) in any case, finite
-    numbers only; anything else is ignored. Clipping is left to agents.baseline_policy.
+    numbers only; anything else is ignored. Clipping is left to policies.baseline_policy.
     """
     known = {sku_id.lower(): sku_id for sku_id in obs.skus}
     aliases = sku_aliases(obs)
@@ -660,7 +660,7 @@ def get_llm_action(
     baseline rule's order with the model's extra days on top. If the call fails, the
     baseline rule's own order.
     """
-    from agents import baseline_policy          # agents.py imports this module
+    from policies import baseline_policy          # policies.py imports this module
 
     user_prompt = build_user_prompt(observation_to_dict(obs, include_cover=False), action_history, step)
     try:
@@ -706,7 +706,7 @@ async def run_episode(
     Action history
     --------------
     Maintained as a list of (day, action_str, feedback_str) tuples.
-    Passed to every LLM call so the agent has full memory of the episode.
+    Passed to every LLM call so the policy has full memory of the episode.
     Capped at last 10 entries in the prompt to keep context manageable,
     but the full list is retained internally for scoring and debugging.
     """
@@ -761,7 +761,7 @@ async def run_episode(
             last_obs = result.observation
 
             # Record this step in action history
-            # Stores: (day_index, what_agent_decided, what_environment_reported)
+            # Stores: (day_index, what_policy_decided, what_environment_reported)
             action_history.append((
                 obs_dict["day"],
                 raw_action,

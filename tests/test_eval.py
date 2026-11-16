@@ -1,4 +1,4 @@
-"""Tests for the evaluation script (eval.py) and the reference agents (agents.py)."""
+"""Tests for the evaluation script (eval.py) and the reference policies (policies.py)."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from types import SimpleNamespace
 import pytest
 
 import eval as E
-from agents import Agent, LLMAgent
+from policies import Policy, LLMPolicy
 from tasks import FIXED_TASKS, TEST_SEEDS, TRAIN_SEEDS
 
 TEST_SEED = TEST_SEEDS[0]
 
 
-class FixedReplyAgent(Agent):
+class FixedReplyPolicy(Policy):
     def __init__(self, reply, error=None):
         self.reply, self.error = reply, error
 
@@ -22,9 +22,9 @@ class FixedReplyAgent(Agent):
         return self.reply, self.error
 
 
-def use_agent(monkeypatch, agent_factory):
-    original = E.make_agent
-    monkeypatch.setattr(E, "make_agent", lambda name, llm=None: agent_factory() if name == "custom" else original(name, llm))
+def use_policy(monkeypatch, policy_factory):
+    original = E.make_policy
+    monkeypatch.setattr(E, "make_policy", lambda name, llm=None: policy_factory() if name == "custom" else original(name, llm))
 
 
 def test_seed_splits_do_not_overlap():
@@ -36,7 +36,7 @@ def test_episode_record_is_complete_and_deterministic():
     first = E.run_episode("baseline", "flu_season", TEST_SEED, split="test", save_steps=True)
     second = E.run_episode("baseline", "flu_season", TEST_SEED, split="test", save_steps=True)
     assert first == second
-    for key in ("agent", "task", "seed", "split", "score", "avg_fill", "stockout_sku_days",
+    for key in ("policy", "task", "seed", "split", "score", "avg_fill", "stockout_sku_days",
                 "overflow_days", "units_wasted", "parse_failures", "llm_errors", "days", "steps"):
         assert key in first
     assert first["days"] == len(first["steps"]) == 60
@@ -53,24 +53,24 @@ def test_floor_baseline_and_ceiling_are_ordered(task_name):
 
 
 def test_replies_without_json_are_counted(monkeypatch):
-    use_agent(monkeypatch, lambda: FixedReplyAgent("I would rather not order today."))
+    use_policy(monkeypatch, lambda: FixedReplyPolicy("I would rather not order today."))
     assert E.run_episode("custom", "flu_season", TEST_SEED)["parse_failures"] == 60
-    use_agent(monkeypatch, lambda: FixedReplyAgent("Nothing needed: {}"))
+    use_policy(monkeypatch, lambda: FixedReplyPolicy("Nothing needed: {}"))
     assert E.run_episode("custom", "flu_season", TEST_SEED)["parse_failures"] == 0
 
 
 def test_llm_failing_from_the_start_stops_the_run(monkeypatch):
-    use_agent(monkeypatch, lambda: FixedReplyAgent("{}", error="AuthenticationError: 401"))
+    use_policy(monkeypatch, lambda: FixedReplyPolicy("{}", error="AuthenticationError: 401"))
     with pytest.raises(RuntimeError, match="401"):
         E.run_episode("custom", "flu_season", TEST_SEED)
 
 
-def test_llm_agent_runs_through_eval(monkeypatch):
+def test_llm_policy_runs_through_eval(monkeypatch):
     def create(model, messages, **kwargs):
         message = SimpleNamespace(content='Restocking.\n```json\n{"paracetamol": 400}\n```')
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
-    use_agent(monkeypatch, lambda: LLMAgent(model="stub", api_key="x", base_url="x", client=client))
+    use_policy(monkeypatch, lambda: LLMPolicy(model="stub", api_key="x", base_url="x", client=client))
     record = E.run_episode("custom", "flu_season", TEST_SEED, save_steps=True)
     assert record["parse_failures"] == 0 and record["llm_errors"] == 0
     assert record["score"] > 0.02
@@ -99,7 +99,7 @@ def test_paired_comparison_and_gap_closed():
 
 def test_command_line_writes_results(tmp_path, capsys):
     out = tmp_path / "nothing.jsonl"
-    E.main(["--agent", "nothing", "--episodes", "2", "--tasks", "flu_season", "--workers", "1", "--out", str(out)])
+    E.main(["--policy", "nothing", "--episodes", "2", "--tasks", "flu_season", "--workers", "1", "--out", str(out)])
     lines = out.read_text().splitlines()
     assert len(lines) == 2 and json.loads(lines[0])["seed"] == TEST_SEEDS[0]
     assert "flu_season" in capsys.readouterr().out

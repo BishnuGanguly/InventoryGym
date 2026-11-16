@@ -25,11 +25,11 @@ def days_of(task="supply_chain_broken", seed=4):
     """(env, obs) on every day of an episode the teacher plays."""
     env = InventoryEnvironment()
     obs = env.reset(task_name=task, seed=seed, insights=True)
-    agent = T.TeacherAgent()
-    agent.start_episode(env)
+    policy = T.TeacherPolicy()
+    policy.start_episode(env)
     while not obs.done:
-        yield env, obs, agent
-        obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
+        yield env, obs, policy
+        obs = env.step(InventoryAction(message=policy.act(obs, [])[0]))
 
 
 # ---------------------------------------------------------------------------
@@ -56,18 +56,18 @@ def test_normal_lead_times_are_the_first_reports():
     assert T.normal_lead_times(env) == {k: s.avg_lead_time for k, s in obs.skus.items()}
 
 
-def test_teacher_agent_sends_what_a_model_giving_its_answer_would_send():
-    for _, obs, agent in days_of(seed=6):
-        order, error = agent.act(obs, [])
-        assert error is None and order == EP.answer_to_order(obs, agent.last_model_reply)
-        assert set(json.loads(agent.last_model_reply)) == set(obs.skus)
+def test_teacher_policy_sends_what_a_model_giving_its_answer_would_send():
+    for _, obs, policy in days_of(seed=6):
+        order, error = policy.act(obs, [])
+        assert error is None and order == EP.answer_to_order(obs, policy.last_model_reply)
+        assert set(json.loads(policy.last_model_reply)) == set(obs.skus)
         if obs.current_date > 25:
             break
 
 
 def test_teacher_beats_the_baseline_and_the_extra_days_rule():
     seeds = list(TEST_SEEDS[:6])
-    teacher = st.fmean(r["score"] for r in EP.run_rule_episodes(T.TeacherAgent(), "teacher", TASKS, seeds))
+    teacher = st.fmean(r["score"] for r in EP.run_rule_episodes(T.TeacherPolicy(), "teacher", TASKS, seeds))
     rule = st.fmean(E.run_episode("baseline_insights", t, s, insights=True)["score"] for t in TASKS for s in seeds)
     baseline = st.fmean(E.run_episode("baseline", t, s, insights=True)["score"] for t in TASKS for s in seeds)
     assert teacher > rule > baseline

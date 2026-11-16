@@ -31,7 +31,7 @@ final_score = clip( sum of step rewards / no_of_days , 0, 1 )
             = clip( mean over days of (weighted fill today − waste_fraction_today) , 0, 1 )
 ```
 
-- The episode score is simply the **average daily step reward**, so an agent is evaluated on exactly what it is rewarded for each day (useful when training with RL).
-- An agent that orders nothing serves almost no demand and scores about 0. Waste only ever subtracts, so a day without deliveries earns nothing extra.
+- The episode score is simply the **average daily step reward**, so a policy is evaluated on exactly what it is rewarded for each day (useful when training with RL).
+- A policy that orders nothing serves almost no demand and scores about 0. Waste only ever subtracts, so a day without deliveries earns nothing extra.
 - Days not played (an episode cut short) count as 0.
 - `tasks.compute_final_score` rebuilds the sum from running totals in the state: `demand_fulfilled_cumulative` per SKU, and `inventory_excess_cumulative`, which adds `1 − waste_fraction_today` each day.

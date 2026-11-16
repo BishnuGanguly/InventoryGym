@@ -8,7 +8,7 @@ import re
 import pytest
 
 import inference
-from agents import BaselineAgent
+from policies import BaselinePolicy
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
 from tasks import TEST_SEEDS
@@ -21,10 +21,10 @@ SKU_WITH_NUMBER = re.compile(r"(insulin|paracetamol|bp_medication|vitamins|hydro
 def _played(days: int, seed: int = TEST_SEEDS[0]):
     env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=seed)
-    agent, history = BaselineAgent(), []
+    policy, history = BaselinePolicy(), []
     for _ in range(days):
         day = obs.current_date
-        reply, _ = agent.act(obs, history)
+        reply, _ = policy.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     return env, obs, history

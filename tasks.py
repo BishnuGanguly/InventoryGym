@@ -47,7 +47,7 @@ COLD_STORAGE_DAYS = _POOL_DAYS[True]
 # Day-to-day randomness. Daily demand varies with a standard deviation of
 # DEMAND_NOISE_CV x base demand, and each order's lead time with LEAD_TIME_NOISE_STD
 # days. The environment draws this noise once per episode from the seed, so it
-# never depends on what the agent does.
+# never depends on what the policy does.
 DEMAND_NOISE_CV = PHARMA_WORLD.noise.demand_cv
 LEAD_TIME_NOISE_STD = PHARMA_WORLD.noise.lead_time_std
 
@@ -156,7 +156,7 @@ def compute_final_score(
     final_score = clip(sum of step rewards / no_of_days, 0, 1)
                 = clip(mean over days of (weighted fill - waste_fraction_today), 0, 1)
 
-    The episode score is the average daily reward, so an agent is evaluated on
+    The episode score is the average daily reward, so a policy is evaluated on
     exactly what it is rewarded for each step. Ordering nothing scores ~0.
     Days not played (an episode cut short) count as 0.
     """

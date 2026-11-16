@@ -54,7 +54,7 @@ def build_dashboard(*args):
 
 
 ENV_NAME = "inventorygym"
-# How many agents can hold a session at the same time. Each session gets its own environment,
+# How many policies can hold a session at the same time. Each session gets its own environment,
 # so they never share an episode. A further session is refused until one of them closes.
 MAX_CONCURRENT_ENVS = max(1, int(os.getenv("MAX_CONCURRENT_ENVS", "8")))
 

@@ -1,5 +1,5 @@
 """
-The InventoryGym dashboard: describe an inventory, watch an agent run it, compare agents.
+The InventoryGym dashboard: describe an inventory, watch a policy run it, compare policies.
 
 Three steps on one page:
 
@@ -8,12 +8,12 @@ Three steps on one page:
                      storage, products, tasks and events in tables, or edit / upload
                      the world file itself. Mistakes are explained in place.
 2. Run an episode  - any task of that world, with or without insights, played by a rule
-                     agent, a reference agent or an LLM, with charts redrawn every
+                     policy, a reference policy or an LLM, with charts redrawn every
                      simulated day and the baseline and oracle on the same seed.
-3. Compare agents  - several agents over several seeds, paired seed by seed.
+3. Compare policies  - several policies over several seeds, paired seed by seed.
 
 Every run builds its own environment in-process, so viewers never share an episode and
-the benchmark API is unaffected. Agents only see the observation; the charts also show
+the benchmark API is unaffected. Policies only see the observation; the charts also show
 the hidden truth (orange) so a viewer can judge the decisions.
 
 Worlds typed or uploaded here are parsed with the safe YAML loader and size limits
@@ -39,8 +39,8 @@ import plotly.graph_objects as go
 import yaml
 
 import inference
-from agents import (Agent, BaselineAgent, History, InsightsPlanAgent, LLMAgent, NothingAgent,  # noqa: F401
-                    OracleAgent, baseline_policy)
+from policies import (Policy, BaselinePolicy, History, InsightsPlanPolicy, LLMPolicy, NothingPolicy,  # noqa: F401
+                    OraclePolicy, baseline_policy)
 from models import EpisodeConfig, InventoryState, InventoryAction
 from insights import find_events
 from tasks import PHARMA_WORLD, TEST_SEEDS, average_step_reward, get_task_config, weighted_fill
@@ -66,20 +66,20 @@ TEMPLATE_GROCERY = "Grocery store (example)"
 TEMPLATE_STARTER = "Small shop (blank starter)"
 TEMPLATES = (TEMPLATE_PHARMA, TEMPLATE_GROCERY, TEMPLATE_STARTER)
 
-AGENT_BASELINE = "Baseline rule (no insights, no LLM)"
-AGENT_INSIGHTS_PLAN = "Insights plan (reads the insights perfectly; reference)"
-AGENT_ORACLE = "Oracle (perfect foresight; the ceiling)"
-AGENT_LLM = "LLM (a language model adjusts the baseline's orders)"
-# Four agents are enough to read a result: a simple rule, the best use of the insights, the
-# ceiling, and a model. The other reference agents of agents.py stay available in eval.py.
-RULE_AGENTS = {AGENT_BASELINE: BaselineAgent, AGENT_INSIGHTS_PLAN: InsightsPlanAgent, AGENT_ORACLE: OracleAgent}
-LLM_AGENTS = (AGENT_LLM,)
-AGENT_CHOICES = [*RULE_AGENTS, *LLM_AGENTS]
+POLICY_BASELINE = "Baseline rule (no insights, no LLM)"
+POLICY_INSIGHTS_PLAN = "Insights plan (reads the insights perfectly; reference)"
+POLICY_ORACLE = "Oracle (perfect foresight; the ceiling)"
+POLICY_LLM = "LLM (a language model adjusts the baseline's orders)"
+# Four policies are enough to read a result: a simple rule, the best use of the insights, the
+# ceiling, and a model. The other reference policies of policies.py stay available in eval.py.
+RULE_POLICIES = {POLICY_BASELINE: BaselinePolicy, POLICY_INSIGHTS_PLAN: InsightsPlanPolicy, POLICY_ORACLE: OraclePolicy}
+LLM_POLICIES = (POLICY_LLM,)
+POLICY_CHOICES = [*RULE_POLICIES, *LLM_POLICIES]
 
 INSIGHTS_LABEL = "Insights: announce disruptions 5 to 10 days ahead"
-INSIGHTS_INFO = "On: agents that read insights can prepare. Off: every agent sees only the stock report."
+INSIGHTS_INFO = "On: policies that read insights can prepare. Off: every policy sees only the stock report."
 
-# Models offered for the LLM agents: suggestions only, any model the endpoint serves can be typed.
+# Models offered for the LLM policies: suggestions only, any model the endpoint serves can be typed.
 MODEL_SUGGESTIONS = [inference.MODEL_NAME, "Qwen/Qwen2.5-7B-Instruct", "meta-llama/Llama-3.1-8B-Instruct",
                      "microsoft/Phi-4-mini-instruct", "google/gemma-2-2b-it"]
 
@@ -89,11 +89,11 @@ MAX_CONSECUTIVE_LLM_ERRORS = 3
 # match the charts, instead of Gradio's default indigo.
 THEME = gr.themes.Soft(primary_hue=gr.themes.colors.blue, secondary_hue=gr.themes.colors.teal,
                        neutral_hue=gr.themes.colors.slate, radius_size=gr.themes.sizes.radius_lg)
-# Compare tab: seeds per agent, and fewer for LLM agents (each seed is one model call per day).
+# Compare tab: seeds per policy, and fewer for LLM policies (each seed is one model call per day).
 MAX_COMPARE_SEEDS = 30
 MAX_COMPARE_SEEDS_LLM = 3
 
-# Chart colours. Blue is what the agent sees or does, orange is hidden ground truth,
+# Chart colours. Blue is what the policy sees or does, orange is hidden ground truth,
 # aqua is deliveries; grey is a reference. Pools use the categorical list.
 BLUE = "#2a78d6"
 ORANGE = "#eb6834"
@@ -281,23 +281,23 @@ def section_html(number: str, title: str, hint: str = "") -> str:
 def ready_html() -> str:
     """What step 2 shows before the first run."""
     return """<div class="ig-card"><div style="font-size:17px;font-weight:700">👋 Ready when you are</div>
-<div class="ig-sub" style="font-size:14px">Pick a task and an agent, then press <b>▶ Run episode</b>.</div>
+<div class="ig-sub" style="font-size:14px">Pick a task and a policy, then press <b>▶ Run episode</b>.</div>
 <div class="ig-feats">
-<div class="ig-feat"><b>📈 A live score</b>How the agent does against a simple rule and against perfect foresight, day by day.</div>
+<div class="ig-feat"><b>📈 A live score</b>How the policy does against a simple rule and against perfect foresight, day by day.</div>
 <div class="ig-feat"><b>💡 Insights</b>Disruptions announced a few days ahead, in your inventory's own words.</div>
-<div class="ig-feat"><b>🔍 The hidden truth</b>Orange shows what really happened, which the agent never sees.</div></div></div>"""
+<div class="ig-feat"><b>🔍 The hidden truth</b>Orange shows what really happened, which the policy never sees.</div></div></div>"""
 
 
-AGENT_HELP = {
-    AGENT_BASELINE: "A simple rule: keep stock for the delivery time plus 3 days. It ignores the insights.",
-    AGENT_INSIGHTS_PLAN: "A reference that reads the insights perfectly (it sees the events behind them). Shows what the insights are worth.",
-    AGENT_ORACLE: "Knows the future, so nobody can beat it. It marks the best possible score.",
-    AGENT_LLM: "A language model reads the report (and the insights, when on) and adds extra days of stock on top of the baseline's orders. Needs your token (More options).",
+POLICY_HELP = {
+    POLICY_BASELINE: "A simple rule: keep stock for the delivery time plus 3 days. It ignores the insights.",
+    POLICY_INSIGHTS_PLAN: "A reference that reads the insights perfectly (it sees the events behind them). Shows what the insights are worth.",
+    POLICY_ORACLE: "Knows the future, so nobody can beat it. It marks the best possible score.",
+    POLICY_LLM: "A language model reads the report (and the insights, when on) and adds extra days of stock on top of the baseline's orders. Needs your token (More options).",
 }
 
 
-def agent_hint_html(label: str) -> str:
-    return f'<div class="ig-hint">ℹ️ {html.escape(AGENT_HELP.get(label, ""))}</div>'
+def policy_hint_html(label: str) -> str:
+    return f'<div class="ig-hint">ℹ️ {html.escape(POLICY_HELP.get(label, ""))}</div>'
 
 
 # ---------------------------------------------------------------------------
@@ -319,16 +319,16 @@ class EpisodeTrace:
     finished: bool = False
     stopped_reason: str = ""
     insights_on: bool = False
-    # Score so far, day by day, of reference agents on this very episode: {"Baseline": [...], "Oracle": [...]}.
+    # Score so far, day by day, of reference policies on this very episode: {"Baseline": [...], "Oracle": [...]}.
     references: Dict[str, List[float]] = field(default_factory=dict)
 
 
-def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, insights: bool = False) -> Iterator[EpisodeTrace]:
+def run_episode(task_name: str, seed: int, policy: Any, world: Optional[World] = None, insights: bool = False) -> Iterator[EpisodeTrace]:
     """Play one episode, yielding the (same, growing) trace after reset and after every day."""
     env = InventoryEnvironment()
     obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
-    if hasattr(agent, "start_episode"):
-        agent.start_episode(env)
+    if hasattr(policy, "start_episode"):
+        policy.start_episode(env)
     trace = EpisodeTrace(task_name=task_name, seed=seed, config=env._episode_config, state=obs, insights_on=bool(insights))
     history: History = []
     consecutive_errors = 0
@@ -340,7 +340,7 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
         insights_today = list(obs.insights)
         insights_before = set(trace.rows[-1]["insights"]) if trace.rows else set()
 
-        reply, error = agent.act(obs, history)
+        reply, error = policy.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
 
         placed = [o for o in env._open_orders if o[2] == day]
@@ -348,7 +348,7 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
         trace.state = obs
         trace.rows.append({
             "day": day,
-            "reply": getattr(agent, "last_model_reply", None) or reply,
+            "reply": getattr(policy, "last_model_reply", None) or reply,
             "error": error,
             "orders": {sku_id: qty for sku_id, qty, _, _ in placed},
             "reward": obs.reward,
@@ -362,7 +362,7 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
                     "inventory": sku.inventory_on_hand,
                     "demand": obs.demand_history[sku_id][-1],
                     "fill": sku.demand_fulfilled_today,
-                    "agent_lead_time": sku.avg_lead_time,
+                    "policy_lead_time": sku.avg_lead_time,
                     "observed_lead_times": obs.lead_time_history[sku_id][delivered_before[sku_id]:],
                 }
                 for sku_id, sku in obs.skus.items()
@@ -402,18 +402,18 @@ def running_score(rewards: Sequence[float]) -> List[float]:
     return out
 
 
-def play_score_curve(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> List[float]:
-    """A rule agent's score so far, day by day, on one episode."""
+def play_score_curve(policy: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> List[float]:
+    """A rule policy's score so far, day by day, on one episode."""
     final = None
-    for final in run_episode(task_name, seed, agent, world=world, insights=insights):
+    for final in run_episode(task_name, seed, policy, world=world, insights=insights):
         pass
     return running_score([r["reward"] for r in final.rows])
 
 
 def reference_curves(task_name: str, seed: int, world: Optional[World], insights: bool) -> Dict[str, List[float]]:
-    """The baseline's and the oracle's score so far on this episode, to judge an agent against."""
-    return {"Baseline": play_score_curve(BaselineAgent(), task_name, seed, world, insights),
-            "Oracle": play_score_curve(OracleAgent(), task_name, seed, world, insights)}
+    """The baseline's and the oracle's score so far on this episode, to judge a policy against."""
+    return {"Baseline": play_score_curve(BaselinePolicy(), task_name, seed, world, insights),
+            "Oracle": play_score_curve(OraclePolicy(), task_name, seed, world, insights)}
 
 
 def gap_closed(score: float, baseline: float, oracle: float) -> Optional[float]:
@@ -431,13 +431,13 @@ def visitor_token(typed: Any) -> str:
     return str(typed or "").strip()
 
 
-def make_agent(label: str, model: str = "", token: str = "") -> Any:
-    """The agent behind a label of AGENT_CHOICES. LLM agents need a model name and a token."""
-    if label in RULE_AGENTS:
-        return RULE_AGENTS[label]()
-    if label == AGENT_LLM:
-        return LLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL)
-    raise ValueError(f"unknown agent {label!r}")
+def make_policy(label: str, model: str = "", token: str = "") -> Any:
+    """The policy behind a label of POLICY_CHOICES. LLM policies need a model name and a token."""
+    if label in RULE_POLICIES:
+        return RULE_POLICIES[label]()
+    if label == POLICY_LLM:
+        return LLMPolicy(model=model, api_key=token, base_url=inference.API_BASE_URL)
+    raise ValueError(f"unknown policy {label!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +497,7 @@ def stock_figure(trace: EpisodeTrace, sku_id: str) -> go.Figure:
     _mark_events(fig, trace.config, sku_id, ("demand_surge", "supplier_delay"))
     fig.add_scatter(
         x=list(range(len(curve))), y=[cfg.base_demand * c for c in curve],
-        name="Expected demand (hidden from agent)", mode="lines",
+        name="Expected demand (hidden from policy)", mode="lines",
         line=dict(color=ORANGE, width=2), hovertemplate="%{y:,.0f}",
     )
     fig.add_scatter(
@@ -525,8 +525,8 @@ def lead_time_figure(trace: EpisodeTrace, sku_id: str) -> go.Figure:
         line=dict(color=ORANGE, width=2), hovertemplate="%{y:.0f} days",
     )
     fig.add_scatter(
-        x=[r["day"] for r in trace.rows], y=[r["skus"][sku_id]["agent_lead_time"] for r in trace.rows],
-        name="Agent's lead-time estimate", mode="lines", line_shape="hv",
+        x=[r["day"] for r in trace.rows], y=[r["skus"][sku_id]["policy_lead_time"] for r in trace.rows],
+        name="Policy's lead-time estimate", mode="lines", line_shape="hv",
         line=dict(color=BLUE, width=2), hovertemplate="%{y:.1f} days",
     )
     delivered = [(r["day"], lt) for r in trace.rows for lt in r["skus"][sku_id]["observed_lead_times"]]
@@ -576,7 +576,7 @@ def reward_figure(trace: EpisodeTrace) -> go.Figure:
 
 def score_figure(trace: EpisodeTrace) -> go.Figure:
     """
-    The agent's score so far, day by day, against the baseline and the oracle on the same
+    The policy's score so far, day by day, against the baseline and the oracle on the same
     episode. The shaded zone between the baseline and the oracle is the room to improve.
     """
     fig = _figure(trace, "Score so far")
@@ -590,7 +590,7 @@ def score_figure(trace: EpisodeTrace) -> go.Figure:
         fig.add_scatter(x=days, y=oracle, name="Oracle (knows the future)", mode="lines",
                         line=dict(color=ORANGE, width=2, dash="dash"), hovertemplate="%{y:.3f}")
     mine = running_score([r["reward"] for r in trace.rows])
-    fig.add_scatter(x=[r["day"] for r in trace.rows], y=mine, name="This agent", mode="lines",
+    fig.add_scatter(x=[r["day"] for r in trace.rows], y=mine, name="This policy", mode="lines",
                     line=dict(color=BLUE, width=3.5), hovertemplate="%{y:.3f}")
     # Zoom in on where the lines are: the first days (no stock yet) would otherwise flatten them.
     settled = [v for curve in (baseline or [], oracle or [], mine) for v in curve[4:]]
@@ -666,12 +666,12 @@ def preview_figure(config: EpisodeConfig) -> go.Figure:
 
 
 def comparison_figure(table: pd.DataFrame) -> go.Figure:
-    """Mean score per agent with its 95% interval."""
+    """Mean score per policy with its 95% interval."""
     fig = go.Figure()
     if len(table):
-        colours = [ORANGE if "Oracle" in a else INK_MUTED if a == AGENT_BASELINE else BLUE
-                   for a in table["Agent"]]
-        fig.add_bar(x=table["Mean score"], y=table["Agent"], orientation="h",
+        colours = [ORANGE if "Oracle" in a else INK_MUTED if a == POLICY_BASELINE else BLUE
+                   for a in table["Policy"]]
+        fig.add_bar(x=table["Mean score"], y=table["Policy"], orientation="h",
                     marker=dict(color=colours, cornerradius=4),
                     error_x=dict(type="data", array=table["± 95%"], color=INK_MUTED, thickness=1.5),
                     text=[f"{v:.3f}" for v in table["Mean score"]], textposition="inside", insidetextanchor="start",
@@ -742,15 +742,15 @@ def insights_html(trace: EpisodeTrace) -> str:
     return f'<div class="ig-insights">{"".join(items)}</div>'
 
 
-def verdict_html(trace: EpisodeTrace, agent_label: str) -> str:
+def verdict_html(trace: EpisodeTrace, policy_label: str) -> str:
     """After the episode: the score next to the baseline and the oracle on the same seed."""
     if not trace.finished or not trace.references:
         return ""
     score = score_so_far(trace)
     baseline, oracle = trace.references["Baseline"][-1], trace.references["Oracle"][-1]
     share = gap_closed(score, baseline, oracle)
-    if agent_label in (AGENT_BASELINE, AGENT_ORACLE) or share is None:
-        note = "The baseline and the oracle mark the range a good agent plays in."
+    if policy_label in (POLICY_BASELINE, POLICY_ORACLE) or share is None:
+        note = "The baseline and the oracle mark the range a good policy plays in."
     elif share >= 1:
         note = "It matched the oracle, which knows the future."
     elif share > 0.02:
@@ -769,13 +769,13 @@ def decisions_table(trace: EpisodeTrace) -> pd.DataFrame:
         reply = " ".join(r["reply"].split())
         records.append({
             "Day": r["day"],
-            "Agent reply": reply if len(reply) <= 200 else reply[:197] + "...",
+            "Policy reply": reply if len(reply) <= 200 else reply[:197] + "...",
             "Orders accepted": ", ".join(f"{k}: {v:,.0f}" for k, v in r["orders"].items()) or "none",
             "Worst fill": f"{min(s['fill'] for s in r['skus'].values()):.0%}",
             "Reward": round(r["reward"], 3),
             "Error": r["error"] or "",
         })
-    return pd.DataFrame(records, columns=["Day", "Agent reply", "Orders accepted", "Worst fill", "Reward", "Error"])
+    return pd.DataFrame(records, columns=["Day", "Policy reply", "Orders accepted", "Worst fill", "Reward", "Error"])
 
 
 def sku_table(trace: EpisodeTrace, sku_id: str) -> pd.DataFrame:
@@ -793,16 +793,16 @@ def sku_table(trace: EpisodeTrace, sku_id: str) -> pd.DataFrame:
             "Stock on hand": round(s["inventory"], 1),
             "Fill %": round(s["fill"] * 100, 1),
             "Ordered": round(ordered.get(r["day"], 0.0), 1),
-            "Agent lead-time estimate": round(s["agent_lead_time"], 2),
+            "Policy lead-time estimate": round(s["policy_lead_time"], 2),
             "Lead times seen on delivery": ", ".join(f"{x:.0f}" for x in s["observed_lead_times"]),
         })
     return pd.DataFrame(records)
 
 
-def status_html(trace: EpisodeTrace, agent_label: str) -> str:
+def status_html(trace: EpisodeTrace, policy_label: str) -> str:
     """What step 2 says about the run: which episode, how far it is, and how it ended."""
     done = len(trace.rows)
-    head = f"<b>{html.escape(trace.task_name)}</b> · seed {trace.seed} · {html.escape(agent_label)}"
+    head = f"<b>{html.escape(trace.task_name)}</b> · seed {trace.seed} · {html.escape(policy_label)}"
     if trace.stopped_reason:
         return f'<div class="ig-card ig-error">{head}<pre>⚠️ {html.escape(trace.stopped_reason)}</pre></div>'
     pct = 100.0 * done / trace.config.no_of_days
@@ -825,7 +825,7 @@ def focus_product(config: EpisodeConfig) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Comparing agents
+# Comparing policies
 # ---------------------------------------------------------------------------
 
 def _mean_ci(values: Sequence[float]) -> Tuple[float, float]:
@@ -834,21 +834,21 @@ def _mean_ci(values: Sequence[float]) -> Tuple[float, float]:
     return mean, ci
 
 
-def final_score(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> Tuple[float, int]:
+def final_score(policy: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> Tuple[float, int]:
     """(final score, failed model calls) of one episode. An LLM run that stops early scores its unplayed days as 0."""
     trace = None
-    for trace in run_episode(task_name, seed, agent, world=world, insights=insights):
+    for trace in run_episode(task_name, seed, policy, world=world, insights=insights):
         pass
     return average_step_reward(trace.state, trace.config.no_of_days), trace.llm_errors
 
 
-COMPARE_COLUMNS = ["Agent", "Mean score", "± 95%", "Episodes", "vs baseline", "Gap to oracle closed"]
+COMPARE_COLUMNS = ["Policy", "Mean score", "± 95%", "Episodes", "vs baseline", "Gap to oracle closed"]
 
 
 def comparison_html(table: pd.DataFrame) -> str:
-    """The comparison as a plain HTML table (best agent first), or a hint while there is nothing to show."""
+    """The comparison as a plain HTML table (best policy first), or a hint while there is nothing to show."""
     if not len(table):
-        return '<div class="ig-hint">The results appear here, best agent first.</div>'
+        return '<div class="ig-hint">The results appear here, best policy first.</div>'
     head = "".join(f"<th>{html.escape(c)}</th>" for c in COMPARE_COLUMNS)
     body = "".join(
         "<tr>" + "".join(f"<td>{html.escape(str(row[c]))}</td>" for c in COMPARE_COLUMNS) + "</tr>"
@@ -858,20 +858,20 @@ def comparison_html(table: pd.DataFrame) -> str:
 
 def comparison_table(scores: Dict[str, List[float]]) -> pd.DataFrame:
     """
-    One row per agent: mean score with its 95% interval, the mean difference to the
+    One row per policy: mean score with its 95% interval, the mean difference to the
     baseline seed by seed (when the baseline was run) and the share of the baseline-to-oracle
     gap it closes (when both were run). Best first.
     """
-    baseline, oracle = scores.get(AGENT_BASELINE), scores.get(AGENT_ORACLE)
+    baseline, oracle = scores.get(POLICY_BASELINE), scores.get(POLICY_ORACLE)
     rows = []
-    for agent, values in scores.items():
+    for policy, values in scores.items():
         mean, ci = _mean_ci(values)
-        row = {"Agent": agent, "Mean score": round(mean, 4), "± 95%": round(ci, 4), "Episodes": len(values),
+        row = {"Policy": policy, "Mean score": round(mean, 4), "± 95%": round(ci, 4), "Episodes": len(values),
                "vs baseline": "", "Gap to oracle closed": ""}
-        if baseline and agent != AGENT_BASELINE and len(baseline) >= len(values):
+        if baseline and policy != POLICY_BASELINE and len(baseline) >= len(values):
             diff, diff_ci = _mean_ci([v - b for v, b in zip(values, baseline)])
             row["vs baseline"] = f"{diff:+.4f} ± {diff_ci:.4f}"
-            if oracle and agent != AGENT_ORACLE and len(oracle) >= len(values):
+            if oracle and policy != POLICY_ORACLE and len(oracle) >= len(values):
                 possible = sum(o - b for o, b in zip(oracle, baseline))
                 gained = sum(v - b for v, b in zip(values, baseline))
                 if possible > 1e-9:
@@ -888,13 +888,13 @@ def comparison_table(scores: Dict[str, List[float]]) -> pd.DataFrame:
 HERO = """
 <div class="ig-hero">
   <div class="ig-hero-top"><div class="ig-logo">📦</div>
-    <div><h1>InventoryGym</h1><p>Describe an inventory, watch an agent run it, and see what the insights are worth.</p></div></div>
+    <div><h1>InventoryGym</h1><p>Describe an inventory, watch a policy run it, and see what the insights are worth.</p></div></div>
   <div class="ig-steps">
     <span class="ig-step"><b>1</b>Describe your inventory</span><span class="ig-arrow">→</span>
-    <span class="ig-step"><b>2</b>Run an agent</span><span class="ig-arrow">→</span>
-    <span class="ig-step"><b>3</b>Compare agents</span></div>
+    <span class="ig-step"><b>2</b>Run a policy</span><span class="ig-arrow">→</span>
+    <span class="ig-step"><b>3</b>Compare policies</span></div>
   <div class="ig-legend">
-    <span><span class="ig-dot" style="background:#7fb6f5"></span>Blue: what the agent sees or does</span>
+    <span><span class="ig-dot" style="background:#7fb6f5"></span>Blue: what the policy sees or does</span>
     <span><span class="ig-dot" style="background:#ffb18a"></span>Orange: the hidden truth it never sees</span></div>
 </div>
 """
@@ -904,11 +904,11 @@ STEP1 = ("**Pick a starting point, or build your own.** The examples load at onc
          "the tab you used.")
 BUILDER_HELP = ("Plain words in, a working inventory out. **Create my inventory** replaces the inventory above; you can then "
                 "fine-tune it under **Tables** or **File**.")
-STEP2 = ("Choose a task and an agent and press **Run episode**. With insights on, disruptions are announced 5 to 10 days ahead: "
-         "agents that read them can prepare, the baseline cannot.")
-STEP3 = ("Run several agents on the same seeds of one task. Every agent faces exactly the same episodes, so differences are "
+STEP2 = ("Choose a task and a policy and press **Run episode**. With insights on, disruptions are announced 5 to 10 days ahead: "
+         "policies that read them can prepare, the baseline cannot.")
+STEP3 = ("Run several policies on the same seeds of one task. Every policy faces exactly the same episodes, so differences are "
          "taken seed by seed.")
-LLM_NOTE = (f"The LLM agent calls `{inference.API_BASE_URL}` with the token you paste here, on your own account. The token is "
+LLM_NOTE = (f"The LLM policy calls `{inference.API_BASE_URL}` with the token you paste here, on your own account. The token is "
             "used for this run only and is never stored or logged; the server's own secrets are never used for a "
             "visitor's run. One model call per simulated day.")
 
@@ -993,7 +993,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                         apply_file = gr.Button("Use this file", variant="primary", elem_classes="ig-cta")
                 table_parts = [f_name, f_business, f_days, f_storage, f_products, f_tasks, f_events]
 
-                gr.HTML(section_html("🔍", "Preview what can go wrong", "what a task does to each product (the plan the agent never sees), and the insights an agent would read"))
+                gr.HTML(section_html("🔍", "Preview what can go wrong", "what a task does to each product (the plan the policy never sees), and the insights a policy would read"))
                 with gr.Row():
                     p_task = gr.Dropdown(start_world.task_names, value=start_task, label="Task")
                     p_seed = gr.Number(value=42, precision=0, label="Seed")
@@ -1006,19 +1006,19 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 gr.Markdown(STEP2)
                 with gr.Row():
                     task = gr.Dropdown(start_world.task_names, value=start_task, label="Task", scale=2)
-                    agent = gr.Dropdown(AGENT_CHOICES, value=AGENT_BASELINE, label="Agent", scale=3)
-                agent_hint = gr.HTML(agent_hint_html(AGENT_BASELINE))
+                    policy = gr.Dropdown(POLICY_CHOICES, value=POLICY_BASELINE, label="Policy", scale=3)
+                policy_hint = gr.HTML(policy_hint_html(POLICY_BASELINE))
                 with gr.Row():
                     seed = gr.Number(value=42, precision=0, label="Seed", info="same seed, same episode", scale=2)
                     dice = gr.Button("🎲 New seed", scale=1, min_width=120, elem_classes="ig-dice")
                     insights_switch = gr.Checkbox(value=True, label=INSIGHTS_LABEL, info=INSIGHTS_INFO, scale=4)
                 with gr.Accordion("⚙ More options", open=False):
                     delay = gr.Slider(0.0, 1.0, value=0.1, step=0.05, label="Pause per day (seconds)")
-                    gr.Markdown("**LLM settings** (only for the LLM agent)")
+                    gr.Markdown("**LLM settings** (only for the LLM policy)")
                     with gr.Row():
                         model = gr.Dropdown(MODEL_SUGGESTIONS, value=inference.MODEL_NAME, allow_custom_value=True,
                                             label="Model (pick one or type any model the endpoint serves)")
-                        token = gr.Textbox(type="password", label="Your API token (LLM agent only)",
+                        token = gr.Textbox(type="password", label="Your API token (LLM policy only)",
                                            placeholder="Paste a token for the endpoint; used for this run only")
                     gr.Markdown(LLM_NOTE)
                 with gr.Row():
@@ -1030,7 +1030,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     kpis = gr.HTML()
                     verdict = gr.HTML()
                     with gr.Row():
-                        score_plot = gr.Plot(label="Score so far: this agent, the baseline and the oracle")
+                        score_plot = gr.Plot(label="Score so far: this policy, the baseline and the oracle")
                         storage_plot = gr.Plot(label="Storage in use")
                     gr.HTML(section_html("💡", "Insights"))
                     insights_feed = gr.HTML()
@@ -1038,7 +1038,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     focus = gr.Dropdown(list(start_world.products), value=None, label="Product shown in the charts below")
                     with gr.Row():
                         stock_plot = gr.Plot(label="Stock on hand vs. demand")
-                        lead_plot = gr.Plot(label="Lead time: truth vs. the agent's estimate")
+                        lead_plot = gr.Plot(label="Lead time: truth vs. the policy's estimate")
                     with gr.Row():
                         orders_plot = gr.Plot(label="Orders placed and delivered")
                         heat_plot = gr.Plot(label="Unmet demand by product and day")
@@ -1048,20 +1048,20 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                         table = gr.Dataframe()
 
             # ------------------------------------------------------------------ 3
-            with gr.Tab("3 · Compare agents"):
+            with gr.Tab("3 · Compare policies"):
                 gr.Markdown(STEP3)
                 with gr.Row():
                     c_task = gr.Dropdown(start_world.task_names, value=start_task, label="Task", scale=3)
                     c_insights = gr.Checkbox(value=True, label=INSIGHTS_LABEL, info=INSIGHTS_INFO, scale=4)
-                    c_seeds = gr.Slider(3, MAX_COMPARE_SEEDS, value=10, step=1, label="Episodes per agent (test seeds)", scale=3)
-                c_agents = gr.CheckboxGroup(AGENT_CHOICES, value=[AGENT_BASELINE, AGENT_INSIGHTS_PLAN, AGENT_ORACLE],
-                                            label=f"Agents (the LLM agent runs at most {MAX_COMPARE_SEEDS_LLM} episodes, "
+                    c_seeds = gr.Slider(3, MAX_COMPARE_SEEDS, value=10, step=1, label="Episodes per policy (test seeds)", scale=3)
+                c_policies = gr.CheckboxGroup(POLICY_CHOICES, value=[POLICY_BASELINE, POLICY_INSIGHTS_PLAN, POLICY_ORACLE],
+                                            label=f"Policies (the LLM policy runs at most {MAX_COMPARE_SEEDS_LLM} episodes, "
                                                   "with the model and token from step 2)")
                 with gr.Row():
                     c_btn = gr.Button("▶ Compare", variant="primary", elem_classes="ig-cta", scale=3)
                     c_stop = gr.Button("■ Stop", scale=1)
-                c_status = gr.Markdown("Pick the agents and press **Compare**. A good first comparison: the baseline, the insights plan and the oracle.")
-                c_plot = gr.Plot(label="Mean score per agent, with 95% interval")
+                c_status = gr.Markdown("Pick the policies and press **Compare**. A good first comparison: the baseline, the insights plan and the oracle.")
+                c_plot = gr.Plot(label="Mean score per policy, with 95% interval")
                 gr.HTML(section_html("📊", "Results", "differences are taken seed by seed"))
                 c_table = gr.HTML(comparison_html(pd.DataFrame(columns=COMPARE_COLUMNS)), apply_default_css=False)
 
@@ -1119,7 +1119,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 # The inventory in use stays as it was; the problem is shown next to the button.
                 return [gr.skip()] * (3 + len(table_parts) + len(selectors)) + [f"⚠️ {exc}"]
             note = (f"✅ **{world.name}** is ready: {len(world.products)} products, {len(world.storage)} storage area(s), "
-                    f"{len(world.tasks)} practice scenario(s). Open **2 · Run an episode** to watch an agent try it, "
+                    f"{len(world.tasks)} practice scenario(s). Open **2 · Run an episode** to watch a policy try it, "
                     "or fine-tune it under **Tables** and **File**.")
             return [text, world_summary_html(world), text, *_tables_update(data), *_selectors(world), note]
 
@@ -1149,7 +1149,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                        orders_plot, table, heat_plot, log, trace_state]
 
 
-        def on_run(text, task_name, seed_value, insights_choice, agent_choice, pause, model_name, api_token):
+        def on_run(text, task_name, seed_value, insights_choice, policy_choice, pause, model_name, api_token):
             def message(note: str):
                 return (note_html(note), *[gr.skip()] * (len(run_outputs) - 1))
 
@@ -1164,14 +1164,14 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             insights = bool(insights_choice)
             seed_int = int(seed_value) if seed_value is not None else 42
             key = ""
-            if agent_choice in LLM_AGENTS:
+            if policy_choice in LLM_POLICIES:
                 key = visitor_token(api_token)
                 if not key:
-                    yield message("⚠️ The LLM agent needs your own token: paste one under "
+                    yield message("⚠️ The LLM policy needs your own token: paste one under "
                                   "**More options → LLM settings**.")
                     return
             try:
-                runner = make_agent(agent_choice, (model_name or "").strip() or inference.MODEL_NAME, key)
+                runner = make_policy(policy_choice, (model_name or "").strip() or inference.MODEL_NAME, key)
                 references = reference_curves(task_name, seed_int, world, insights)
                 frames = run_episode(task_name, seed_int, runner, world=world, insights=insights)
                 sku_id = None
@@ -1180,8 +1180,8 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     first = sku_id is None
                     sku_id = sku_id or focus_product(trace.config)
                     yield (
-                        status_html(trace, agent_choice), gr.update(visible=True) if first else gr.skip(),
-                        kpi_html(trace), verdict_html(trace, agent_choice),
+                        status_html(trace, policy_choice), gr.update(visible=True) if first else gr.skip(),
+                        kpi_html(trace), verdict_html(trace, policy_choice),
                         score_figure(trace), storage_figure(trace), insights_html(trace),
                         gr.update(choices=list(trace.config.skus), value=sku_id) if first else gr.skip(),
                         *render_detail(trace, sku_id), unmet_heatmap(trace), decisions_table(trace), trace,
@@ -1197,11 +1197,11 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             return render_detail(trace, sku_id)
 
         run_event = run_btn.click(
-            on_run, inputs=[world_text, task, seed, insights_switch, agent, delay, model, token],
+            on_run, inputs=[world_text, task, seed, insights_switch, policy, delay, model, token],
             outputs=run_outputs,
         )
         stop_btn.click(lambda: note_html("⏹ Stopped.", "info"), outputs=status, cancels=[run_event])
-        agent.change(agent_hint_html, inputs=agent, outputs=agent_hint)
+        policy.change(policy_hint_html, inputs=policy, outputs=policy_hint)
         dice.click(lambda: random.randint(1, 99999), outputs=seed)
 
         def on_world_change(text: str):
@@ -1221,23 +1221,23 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 yield f"⚠️ The inventory in step 1 is not valid: {exc}", gr.skip(), gr.skip()
                 return
             if task_name not in world.tasks or not chosen:
-                yield "⚠️ Pick a task and at least one agent.", gr.skip(), gr.skip()
+                yield "⚠️ Pick a task and at least one policy.", gr.skip(), gr.skip()
                 return
             insights = bool(insights_choice)
             n = max(1, min(int(n_seeds or 1), MAX_COMPARE_SEEDS))
             key = visitor_token(api_token)
             scores: Dict[str, List[float]] = {}
             notes: List[str] = []
-            yield f"⏳ Running {len(chosen)} agent(s) on {n} episode(s) of **{task_name}**...", comparison_figure(empty), comparison_html(empty)
-            for label in [a for a in AGENT_CHOICES if a in chosen]:
-                if label in LLM_AGENTS and not key:
+            yield f"⏳ Running {len(chosen)} policy(s) on {n} episode(s) of **{task_name}**...", comparison_figure(empty), comparison_html(empty)
+            for label in [a for a in POLICY_CHOICES if a in chosen]:
+                if label in LLM_POLICIES and not key:
                     notes.append(f"{label}: skipped, it needs a token (step 2, LLM settings).")
                     continue
-                seeds = list(TEST_SEEDS[:min(n, MAX_COMPARE_SEEDS_LLM) if label in LLM_AGENTS else n])
+                seeds = list(TEST_SEEDS[:min(n, MAX_COMPARE_SEEDS_LLM) if label in LLM_POLICIES else n])
                 values, errors = [], 0
                 for s in seeds:
                     try:
-                        value, failed = final_score(make_agent(label, (model_name or "").strip() or inference.MODEL_NAME, key),
+                        value, failed = final_score(make_policy(label, (model_name or "").strip() or inference.MODEL_NAME, key),
                                                     task_name, s, world, insights, "fixed")
                     except (WorldError, ValueError) as exc:
                         notes.append(f"{label}: {exc}")
@@ -1256,7 +1256,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             done = f"✅ Done: **{task_name}**, insights {'on' if insights else 'off'}, test seeds {TEST_SEEDS[0]} to {TEST_SEEDS[n - 1]}."
             yield done + ("\n\n" + "\n".join(f"- {x}" for x in notes) if notes else ""), comparison_figure(result), comparison_html(result)
 
-        compare_event = c_btn.click(on_compare, inputs=[world_text, c_task, c_insights, c_seeds, c_agents, model, token],
+        compare_event = c_btn.click(on_compare, inputs=[world_text, c_task, c_insights, c_seeds, c_policies, model, token],
                                     outputs=[c_status, c_plot, c_table])
         c_stop.click(lambda: "⏹️ Stopped.", outputs=c_status, cancels=[compare_event])
 

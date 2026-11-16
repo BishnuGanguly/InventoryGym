@@ -1,13 +1,13 @@
 # An example world: a small grocery store. Copy it and change it to describe your own
 # inventory; every field is explained in world.py.
 #
-#   uv run python eval.py --world examples/worlds/grocery.yaml --agent baseline --episodes 20
+#   uv run python eval.py --world examples/worlds/grocery.yaml --policy baseline --episodes 20
 
 name: grocery
 description: >
   A grocery store with a fridge for dairy, a freezer for ice cream and a dry shelf
   for everything else, through a holiday promotion and a delivery strike.
-business: a neighbourhood grocery store   # who the agent works for; used in the prompts
+business: a neighbourhood grocery store   # who the policy works for; used in the prompts
 days: 45
 
 noise:

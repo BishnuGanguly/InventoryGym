@@ -13,9 +13,9 @@ tags:
 
 # InventoryGym
 
-**A configurable inventory environment for evaluating and training LLM agents.**
+**A configurable inventory environment for evaluating and training language models on ordering decisions.**
 
-Describe an inventory in one file: the products, where they are stored, and what goes wrong (supplier delays, demand surges). InventoryGym turns it into seeded, repeatable episodes in which an agent reads a daily report and the insights, and decides what to order. It scores the agent against built-in reference agents, and can train a small language model to do the job.
+Describe an inventory in one file: the products, where they are stored, and what goes wrong (supplier delays, demand surges). InventoryGym turns it into seeded, repeatable episodes in which a policy reads a daily report and the insights, and decides what to order. It scores the policy against built-in reference policies, and can train a small language model to do the job.
 
 It ships with a complete pharmaceutical warehouse (the **pharma world**, where all published results were measured) and a grocery store example to copy. It is an [OpenEnv](https://github.com/meta-pytorch/OpenEnv) environment, so it also runs as a server and as a Hugging Face Space.
 
@@ -24,7 +24,7 @@ It ships with a complete pharmaceutical warehouse (the **pharma world**, where a
 | **Your own inventory** | Products, any number of storage pools, tasks and events in a YAML file. Mistakes are reported with where they are. |
 | **Every seed a different episode** | Amounts, the disrupted product and the timing can be drawn per seed, so no fixed timetable works. The same seed always gives the same episode. |
 | **Insights to read** | Disruptions are announced a few days ahead, in your products' own words. Reading them is what a language model can add to a stock rule. |
-| **Reference agents** | From ordering nothing to perfect foresight, including two that read the insights perfectly, so a score always has something to be compared with. |
+| **Reference policies** | From ordering nothing to perfect foresight, including two that read the insights perfectly, so a score always has something to be compared with. |
 | **Training** | A teacher for a supervised warm start, a reward for GRPO, and a Kaggle notebook for Phi-4-mini. |
 | **Safe answer format** | An LLM only adjusts a rule's default order, so a confused model costs little. |
 
@@ -35,11 +35,11 @@ git clone https://github.com/BishnuGanguly/InventoryGym
 cd InventoryGym
 uv sync
 
-# Score a reference agent on the pharma world (5 seeds per task, a few seconds)
-uv run python eval.py --agent baseline --episodes 5
+# Score a reference policy on the pharma world (5 seeds per task, a few seconds)
+uv run python eval.py --policy baseline --episodes 5
 
-# The same on the grocery example, with insights, for an agent that reads it
-uv run python eval.py --world examples/worlds/grocery.yaml --agent insights_plan --insights --episodes 5
+# The same on the grocery example, with insights, for a policy that reads it
+uv run python eval.py --world examples/worlds/grocery.yaml --policy insights_plan --insights --episodes 5
 ```
 
 ```
@@ -59,19 +59,19 @@ One command covers the common jobs (`uv run inventorygym --help`):
 uv run inventorygym serve                    # the server and the dashboard at http://localhost:8000/dashboard/
 uv run inventorygym worlds                   # the built-in inventories and their tasks
 uv run inventorygym check my_store.yaml      # is my world file valid, and what is in it?
-uv run inventorygym eval --agent baseline --episodes 5      # the same options as eval.py
+uv run inventorygym eval --policy baseline --episodes 5      # the same options as eval.py
 ```
 
 ## How an episode works
 
 Each day, for 45 to 60 days:
 
-1. **The agent gets a report**: stock on hand, orders on the way, recent demand, recent lead times and how full each storage pool is, per product. With insights switched on, it also gets the announcements published so far.
-2. **The agent orders.** A rule agent returns quantities. An LLM agent only says how many *extra* days of stock to keep on top of a rule's default (see [how an agent answers](docs/observation-and-answers.md)).
-3. **The day plays out.** Deliveries arrive after a lead time the agent cannot see in advance, and anything that does not fit in its storage pool is wasted. Customers are served from the shelf.
+1. **The policy gets a report**: stock on hand, orders on the way, recent demand, recent lead times and how full each storage pool is, per product. With insights switched on, it also gets the announcements published so far.
+2. **The policy orders.** A rule policy returns quantities. An LLM policy only says how many *extra* days of stock to keep on top of a rule's default (see [how a policy answers](docs/observation-and-answers.md)).
+3. **The day plays out.** Deliveries arrive after a lead time the policy cannot see in advance, and anything that does not fit in its storage pool is wasted. Customers are served from the shelf.
 4. **The day is scored**: the share of demand served, weighted by how critical each product is, minus the share of deliveries wasted. The episode score is the average day, from 0 to 1 ([scoring](docs/scoring.md)).
 
-Demand and lead times are noisy, and all of the noise is drawn from the seed when the episode starts. An episode therefore never depends on what the agent does, every agent faces exactly the same world, and one day can be replayed with different answers to compare them.
+Demand and lead times are noisy, and all of the noise is drawn from the seed when the episode starts. An episode therefore never depends on what the policy does, every policy faces exactly the same world, and one day can be replayed with different answers to compare them.
 
 ## Describe your own inventory
 
@@ -79,7 +79,7 @@ A **world file** holds everything that defines an inventory. This is a small but
 
 ```yaml
 name: my_store
-business: a neighbourhood grocery store        # who the agent works for (used in prompts)
+business: a neighbourhood grocery store        # who the policy works for (used in prompts)
 days: 45
 
 storage:                                       # any number of pools, any names
@@ -119,7 +119,7 @@ tasks:                                         # the same products under differe
 ```
 
 ```bash
-uv run python eval.py --world my_store.yaml --agent baseline --insights --episodes 20
+uv run python eval.py --world my_store.yaml --policy baseline --insights --episodes 20
 ```
 
 | Part | What you can set |
@@ -141,19 +141,19 @@ The full reference is at the top of [`world.py`](world.py). [`examples/worlds/gr
 
 ## Insights
 
-With `--insights`, every disruption is announced 5 to 10 days before it starts. Insights never change what happens; they only tell the agent early.
+With `--insights`, every disruption is announced 5 to 10 days before it starts. Insights never change what happens; they only tell the policy early.
 
 An insight reads like this, in your products' names and causes, with approximate timing:
 
 > *Planning note: a heat wave is on the way. Sales of ice cream could roughly double in about 7 days and stay high for roughly 2 weeks.*
 
-A stock rule cannot use this text. An agent that understands it can prepare before the shelves show a problem.
+A stock rule cannot use this text. A policy that understands it can prepare before the shelves show a problem.
 
-## Agents
+## Policies
 
-All agents are in [`agents.py`](agents.py) and run on any world with `eval.py --agent <name>`.
+All policies are in [`policies.py`](policies.py) and run on any world with `eval.py --policy <name>`.
 
-| Agent | What it does |
+| Policy | What it does |
 |---|---|
 | `nothing` | Never orders: the floor. |
 | `baseline` | An order-up-to rule: stock for the lead time plus 3 safety days. Ignores insights. |
@@ -163,11 +163,11 @@ All agents are in [`agents.py`](agents.py) and run on any world with `eval.py --
 | `llm` | A language model through any OpenAI-compatible API (hosted, or local with Ollama). |
 | `llm_insights` | A hybrid: the baseline orders, and the model only reads the insights. |
 
-`baseline_insights`, `insights_plan` and `oracle` read information an agent does not get (the events themselves, or the future). They are references: they show what the insights are worth and how far a score is from the best possible.
+`baseline_insights`, `insights_plan` and `oracle` read information a policy does not get (the events themselves, or the future). They are references: they show what the insights are worth and how far a score is from the best possible.
 
 **What the insights are worth**, with insights, in the two settings where the disrupted product and the timing are drawn per seed:
 
-| Agent | Pharma world, surprise tasks (50 test seeds × 3 tasks) | Grocery example, `surprise_disruptions` (100 test seeds) |
+| Policy | Pharma world, surprise tasks (50 test seeds × 3 tasks) | Grocery example, `surprise_disruptions` (100 test seeds) |
 |---|:---:|:---:|
 | "+3 days on every product" (no reading) | 0.879 | 0.939 |
 | `baseline` | 0.871 | 0.951 |
@@ -181,11 +181,11 @@ Keeping extra stock of everything helps a little where storage is generous and h
 ## Evaluate
 
 ```bash
-uv run python eval.py --agent insights_plan --insights --episodes 50          # -> results/insights_plan_insights_test_50.jsonl
-uv run python eval.py --agent oracle    --insights --episodes 50
+uv run python eval.py --policy insights_plan --insights --episodes 50          # -> results/insights_plan_insights_test_50.jsonl
+uv run python eval.py --policy oracle    --insights --episodes 50
 
 # A model behind any OpenAI-compatible endpoint, e.g. a local Ollama server
-uv run python eval.py --agent llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \
+uv run python eval.py --policy llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \
                       --insights --episodes 10 --save-steps
 
 # Compare two runs seed by seed; with --oracle, also the share of the gap to the oracle closed
@@ -194,10 +194,10 @@ uv run python eval.py --compare results/insights_plan_insights_test_50.jsonl res
 ```
 
 - **Seeds are split**: `--split train` uses seeds 0–9,999 and `--split test` 10,000–19,999. Tune and train on train seeds, report test seeds.
-- **Comparisons are paired**: the same seed gives every agent the same world, so differences are taken seed by seed, which cancels each seed's luck.
+- **Comparisons are paired**: the same seed gives every policy the same world, so differences are taken seed by seed, which cancels each seed's luck.
 - **Running a model on your own computer** takes one command: see [`local_llm/README.md`](local_llm/README.md).
 
-Details: [Evaluating an agent](docs/evaluation.md).
+Details: [Evaluating a policy](docs/evaluation.md).
 
 ## Train a small model
 
@@ -224,9 +224,9 @@ uv run inventorygym serve
 
 - **Dashboard** (`/dashboard`, the page the Space opens), in three steps:
   1. **Your inventory**: build your own in the **Quick builder**, in plain words: one row per product (what it sells per day, how many days a delivery takes, whether it needs a fridge, how bad it is to run out), then what should go wrong in the practice runs and how badly. Or start from the pharma world or the grocery example. Fine-tune in tables or in the world file itself, or upload one. Mistakes are explained in place, and a preview shows what a task does and the insights it produces.
-  2. **Run an episode**: any task, with or without insights, played by a rule agent, a reference agent or an LLM (your own token, pasted for that run; the server's secrets are never used). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the insights feed, stock, lead times and orders per product, with the hidden truth in orange.
-  3. **Compare agents**: several agents on the same seeds, with intervals and the share of the gap to the oracle each closes.
-- **API**: `/reset`, `/step`, `/state`, `/schema`, `/metadata` and a WebSocket, following OpenEnv 0.3. [`client.py`](client.py) is the Python client. Up to 8 agents can hold a session at once (`MAX_CONCURRENT_ENVS`), each with its own episode.
+  2. **Run an episode**: any task, with or without insights, played by a rule policy, a reference policy or an LLM (your own token, pasted for that run; the server's secrets are never used). Charts redraw every simulated day: the score against the baseline and the oracle on the same episode, storage in use per pool, the insights feed, stock, lead times and orders per product, with the hidden truth in orange.
+  3. **Compare policies**: several policies on the same seeds, with intervals and the share of the gap to the oracle each closes.
+- **API**: `/reset`, `/step`, `/state`, `/schema`, `/metadata` and a WebSocket, following OpenEnv 0.3. [`client.py`](client.py) is the Python client. Up to 8 policies can hold a session at once (`MAX_CONCURRENT_ENVS`), each with its own episode.
 - **Playground** (`/web`): the dashboard is its first tab; the *Playground* tab resets and steps an episode by hand.
 - **Docker / Hugging Face Space**: the `Dockerfile` builds the server with the web interface on; the front matter of this file configures the Space.
 
@@ -246,10 +246,10 @@ Details: [Server, playground and dashboard](docs/server.md).
 |---|---|
 | [World files](docs/world-files.md) | Describing your own inventory |
 | [The pharma world](docs/pharma-world.md) | The built-in products, storage and its fixed and surprise tasks |
-| [What the agent sees and how it answers](docs/observation-and-answers.md) | The report, and how rule agents and LLM agents answer |
+| [What the policy sees and how it answers](docs/observation-and-answers.md) | The report, and how rule policies and LLM policies answer |
 | [Scoring](docs/scoring.md) | The daily reward and the episode score |
-| [Results](docs/results.md) | Reference agents, what the insights are worth, small LLMs |
-| [Evaluating an agent](docs/evaluation.md) | `eval.py` in full |
+| [Results](docs/results.md) | Reference policies, what the insights are worth, small LLMs |
+| [Evaluating a policy](docs/evaluation.md) | `eval.py` in full |
 | [Training](docs/training.md) | The teacher, the GRPO reward, the Kaggle notebook |
 | [Server, playground and dashboard](docs/server.md) | Running it as a service, environment variables |
 | [`local_llm/README.md`](local_llm/README.md) | A local model with Ollama |
@@ -270,9 +270,9 @@ InventoryGym/
 │   └── world_forms.py          # A world as editable tables, for the dashboard
 ├── tasks.py               # The pharma task lists, train and test seeds, scoring
 ├── insights.py                # Insights about a task's disruptions
-├── agents.py              # Reference agents and LLM agents
+├── policies.py              # Reference policies and LLM policies
 ├── inference.py           # Prompts, the report, answer parsing
-├── eval.py                # Evaluate and compare agents
+├── eval.py                # Evaluate and compare policies
 ├── training/              # Teacher, GRPO reward, probe exam, Kaggle notebook
 ├── local_llm/             # Run a local model with Ollama
 ├── client.py              # OpenEnv client
@@ -291,6 +291,6 @@ uv run --extra dev python -m pytest tests     # about a minute
 InventoryGym grew out of a pharma cold-chain benchmark, and some parts still show it:
 
 - **Old names still work.** The classes are `InventoryEnvironment`, `InventoryAction` and `InventoryEnvClient`, and the package is `inventorygym`. Their earlier names (`PharmaEnvironment`, `PharmaAction`, `PharmaEnvClient`, `server/my_env_environment.py`) are kept as aliases.
-- **Pharma only, for now**: training (`training/`) and the local LLM runner run the pharma world's tasks. `eval.py`, the dashboard, every agent, insights and prompts work on any world.
+- **Pharma only, for now**: training (`training/`) and the local LLM runner run the pharma world's tasks. `eval.py`, the dashboard, every policy, insights and prompts work on any world.
 - **The pharma world keeps its original prompts and insights wording**, so published results and trained models stay valid. Every other world, including an edited copy of `pharma.yaml`, gets prompts and insights written from its file.
 - **Not there yet**: a licence file. Until one is added, nobody else has permission to reuse the code.

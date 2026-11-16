@@ -14,7 +14,7 @@ One day of one episode: `(task, seed, day)` of a **surprise task**
 (`tasks.SURPRISE_TASKS`) with **insights**, on **train seeds** only. The state of
 that day is rebuilt exactly by resetting the episode and letting the baseline play
 every earlier day (so the state comes from the baseline's play). The prompt is
-exactly what `agents.LLMAgent` sends in the `adjust` format: the system prompt and a
+exactly what `policies.LLMPolicy` sends in the `adjust` format: the system prompt and a
 user turn with the report (no `days_of_cover`) and the results of the last 3 days.
 
 Only **days with visible insights** become prompts. On days without insights every answer
@@ -32,7 +32,7 @@ over the next `HORIZON` days when the answer's extra days are `x`:
 
 1. Copy the environment as it is on that day.
 2. Redraw its noise from today on (`resample_future_noise`) with future `i`'s
-   generator. Today is included: the agent does not know today's demand or the lead
+   generator. Today is included: the policy does not know today's demand or the lead
    time of today's order when it answers.
 3. Today: order `baseline_policy(obs, extra_days=x)`, i.e. the baseline's default
    (lead time + 3 safety days) plus the answer's extra days, clipped to 0..10.
@@ -81,7 +81,7 @@ behaviour; training after a warm start on the teacher sets both to the teacher
 | Who played the days before the prompt | `DayPrompt.states` | `"baseline"` (default), `"teacher"` |
 | Who orders on the days after the answer | `GRPOReward(continuation=...)` | `"baseline"` (default), `"teacher"` |
 
-The teacher is [`teacher.py`](teacher.py): the insights plan (`agents.insights_plan_targets`)
+The teacher is [`teacher.py`](teacher.py): the insights plan (`policies.insights_plan_targets`)
 answering in the `adjust` format. Played over full episodes it scores 0.893 on test
 seeds (baseline 0.871, "+3 days on every SKU" 0.879, `baseline_insights` 0.888, oracle 0.927).
 

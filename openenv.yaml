@@ -8,17 +8,18 @@ port: 8000
 
 # The rest describes the environment for people; OpenEnv ignores it.
 title: InventoryGym
-version: "3.0.0"
+version: "4.0.0"
 author: BishnuGanguly
 description: >
-  An inventory-management environment for LLM agents. Every day the agent
+  An inventory-management environment for ordering policies: rules and
+  language models. Every day the policy
   reads a stock report, and optionally insights about coming supplier delays and
   demand surges, and decides how much of each product to order. The products,
   storage areas and disruptions come from a world file (docs/world-files.md):
   a pharmaceutical warehouse is built in, a grocery store is an example, and
   anyone can describe their own inventory. Demand and lead times are noisy and
   the noise is drawn once per episode from the seed, so an episode never
-  depends on the agent's actions. The agent never sees true demand or true
+  depends on the policy's actions. The policy never sees true demand or true
   lead times: it infers them from what it observes.
 
 observation_space:
@@ -31,7 +32,7 @@ observation_space:
     Per product: inventory_on_hand, average demand (overall and last 5 days),
     average lead time and the last 3 observed, days of cover, storage pool,
     stockout_penalty, waste_penalty, demand fulfilled today and cumulative.
-    Hidden from the agent: true demand, true lead times and the task's curves.
+    Hidden from the policy: true demand, true lead times and the task's curves.
 
 action_space:
   type: structured_json

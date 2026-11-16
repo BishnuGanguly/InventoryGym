@@ -84,7 +84,7 @@ def test_full_run_against_a_local_server(fake_server, tmp_path, capsys):
 
 
 def test_hybrid_insights_run(fake_server, tmp_path, capsys):
-    R.main(["--base-url", fake_server, "--tasks", "flu_season", "--episodes", "1", "--agent", "llm_insights",
+    R.main(["--base-url", fake_server, "--tasks", "flu_season", "--episodes", "1", "--policy", "llm_insights",
             "--insights", "--show", "0", "--results-dir", str(tmp_path)])
     out = capsys.readouterr().out
     assert "reading the insights" in out and "baseline_insights" in out
@@ -94,7 +94,7 @@ def test_hybrid_insights_run(fake_server, tmp_path, capsys):
     record = json.loads((tmp_path / "llm_insights_pharma-gemma2-2b_insights_test_flu_season_1.jsonl").read_text())
     assert record["insights"] is True and record["parse_failures"] == 0 and record["llm_errors"] == 0
     with pytest.raises(SystemExit):
-        R.main(["--base-url", fake_server, "--agent", "llm_insights"])   # needs --insights
+        R.main(["--base-url", fake_server, "--policy", "llm_insights"])   # needs --insights
 
 
 def test_missing_model_gives_setup_instructions(fake_server):
@@ -145,9 +145,9 @@ def test_model_option_sets_up_a_new_model_automatically(fake_server, tmp_path, m
 
 def test_call_timeout_reaches_the_model_client():
     import eval as E
-    agent = E.make_agent("llm", {"model": "m", "base_url": "http://127.0.0.1:9/v1", "api_key": "x", "timeout": 600})
-    assert agent.client.timeout == 600
-    assert E.make_agent("llm", {"model": "m", "base_url": "http://127.0.0.1:9/v1", "api_key": "x"}).client.timeout == 60
+    policy = E.make_policy("llm", {"model": "m", "base_url": "http://127.0.0.1:9/v1", "api_key": "x", "timeout": 600})
+    assert policy.client.timeout == 600
+    assert E.make_policy("llm", {"model": "m", "base_url": "http://127.0.0.1:9/v1", "api_key": "x"}).client.timeout == 60
 
 
 def test_single_chosen_seed(fake_server, tmp_path, capsys):

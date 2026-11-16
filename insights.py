@@ -1,10 +1,10 @@
 """
-Insights: disruptions announced to the agent a few days before they start.
+Insights: disruptions announced to the policy a few days before they start.
 
 Every built-in task already contains its disruptions, as per-SKU demand and lead-time
 curves (tasks.py). This module reads those curves, turns each disruption into an
-InsightEvent, and writes the text the agent will read. The world itself is unchanged: insights
-only tell the agent, ahead of time, what the curves will do.
+InsightEvent, and writes the text the policy will read. The world itself is unchanged: insights
+only tell the policy, ahead of time, what the curves will do.
 
 Insights are on or off for an episode. The wording varies, with approximate timing and
 severity given relative to the day an insight is published, so it has to be read.
@@ -225,7 +225,7 @@ def add_insights(config: EpisodeConfig, insights: bool, seed: Optional[int]) -> 
 
 
 def visible_insights(config: EpisodeConfig, day: int) -> List[str]:
-    """The insights the agent sees on `day`: published already, event not over yet; oldest first."""
+    """The insights the policy sees on `day`: published already, event not over yet; oldest first."""
     return [f"Day {e.announce_day}: {e.message}"
             for e in sorted(config.insights, key=lambda e: e.announce_day)
             if e.announce_day <= day <= e.end_day]

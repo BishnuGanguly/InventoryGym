@@ -1,10 +1,10 @@
-# What the agent sees and how it answers
+# What the policy sees and how it answers
 
-The daily report an agent receives, and how an agent answers.
+The daily report a policy receives, and how a policy answers.
 
-## What the agent observes
+## What the policy observes
 
-Each step the agent receives a full `InventoryState` rendered as a JSON report. Per-SKU signals:
+Each step the policy receives a full `InventoryState` rendered as a JSON report. Per-SKU signals:
 
 | Field | Description |
 |---|---|
@@ -28,9 +28,9 @@ Global signals:
 | `inventory_excess_cumulative` | Sum of `1 - waste_fraction_today` so far (+1 per waste-free day) |
 
 
-## How an agent answers
+## How a policy answers
 
-Each day the agent responds with a JSON object mapping SKU names to order quantities:
+Each day the policy responds with a JSON object mapping SKU names to order quantities:
 
 ```json
 {"insulin": 100, "paracetamol": 500}
@@ -38,9 +38,9 @@ Each day the agent responds with a JSON object mapping SKU names to order quanti
 
 Only include SKUs you want to order. Send `{}` to place no orders today.
 
-The LLM prompt (`inference.py`, also used by `agents.LLMAgent`, `eval.py`, the dashboard and `InventoryEnvironment.to_llm_prompt()`) shows the report one SKU per line and adds two values computed from the observation: `inbound_units` (already ordered, not yet arrived) and `days_of_cover` ((on hand + inbound) ÷ recent daily demand). It shows the results of the last 3 days but not the model's own earlier replies, and its instructions contain no example quantities: small models tend to copy either one instead of reading the report.
+The LLM prompt (`inference.py`, also used by `policies.LLMPolicy`, `eval.py`, the dashboard and `InventoryEnvironment.to_llm_prompt()`) shows the report one SKU per line and adds two values computed from the observation: `inbound_units` (already ordered, not yet arrived) and `days_of_cover` ((on hand + inbound) ÷ recent daily demand). It shows the results of the last 3 days but not the model's own earlier replies, and its instructions contain no example quantities: small models tend to copy either one instead of reading the report.
 
-**How an LLM agent answers.** An LLM does not write order quantities. The baseline rule does the ordering (lead time + 3 safety days of recent demand) and the model only says, per SKU, how many **extra days** of stock to keep on top of that, from 0 to +10:
+**How an LLM policy answers.** An LLM does not write order quantities. The baseline rule does the ordering (lead time + 3 safety days of recent demand) and the model only says, per SKU, how many **extra days** of stock to keep on top of that, from 0 to +10:
 
 ```json
 {"paracetamol": 4, "vitamins": 0, "insulin": 1}

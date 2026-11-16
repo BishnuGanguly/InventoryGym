@@ -9,7 +9,7 @@ import pytest
 
 import eval as E
 import inference
-from agents import LLMAgent
+from policies import LLMPolicy
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
 from tasks import SURPRISE_TASKS, TEST_SEEDS, TRAIN_SEEDS
@@ -88,18 +88,18 @@ def test_empty_answers_play_like_the_baseline():
     assert E.paired_comparison(records, baseline)["ALL"]["mean"] == 0
 
 
-def test_batched_episodes_match_the_llm_agent():
-    """A fixed answer through run_llm_episodes == the same answer through agents.LLMAgent."""
+def test_batched_episodes_match_the_llm_policy():
+    """A fixed answer through run_llm_episodes == the same answer through policies.LLMPolicy."""
     answer = '{"insulin": 4, "paracetamol": 2}'
     stub = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
         create=lambda **_: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=answer))]))))
-    agent = LLMAgent("stub", "x", "x", client=stub)
+    policy = LLMPolicy("stub", "x", "x", client=stub)
     env = InventoryEnvironment()
     obs = env.reset(task_name="surprise_outbreak", seed=TEST_SEEDS[0], insights=True)
     history = []
     while not obs.done:
         day = obs.current_date
-        reply, _ = agent.act(obs, history)
+        reply, _ = policy.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     expected = E.compute_final_score(obs, env._episode_config)
@@ -112,11 +112,11 @@ def test_parse_failures_are_counted():
     assert rec["parse_failures"] == 60
 
 
-def test_flat_extra_agent_and_rule_runner():
-    plus0 = EP.run_rule_episodes(EP.FlatExtraAgent(0), "plus0", TASKS[:1], TEST_SEEDS[:2])
+def test_flat_extra_policy_and_rule_runner():
+    plus0 = EP.run_rule_episodes(EP.FlatExtraPolicy(0), "plus0", TASKS[:1], TEST_SEEDS[:2])
     baseline = [E.run_episode("baseline", TASKS[0], s, insights=True) for s in TEST_SEEDS[:2]]
     assert [r["score"] for r in plus0] == [b["score"] for b in baseline]
-    plus3 = EP.run_rule_episodes(EP.FlatExtraAgent(3), "plus3", TASKS[:1], TEST_SEEDS[:2])
+    plus3 = EP.run_rule_episodes(EP.FlatExtraPolicy(3), "plus3", TASKS[:1], TEST_SEEDS[:2])
     assert [r["score"] for r in plus3] != [r["score"] for r in plus0]
 
 

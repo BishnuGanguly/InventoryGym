@@ -29,7 +29,7 @@ from world import World, load_world
 # ---------------------------------------------------------------------------
 
 DESCRIPTION = (
-    "An inventory-management environment for LLM agents. Every day the agent reads a stock report, and "
+    "An inventory-management environment for ordering policies, rules or language models. Every day the policy reads a stock report, and "
     "optionally insights about coming supplier delays and demand surges, and decides how much of each product to "
     "order. The products, storage areas and disruptions come from a world file, so the same environment runs "
     "a pharmaceutical warehouse, a grocery store or your own inventory. Episodes are fixed by their seed."
@@ -61,7 +61,7 @@ class InventoryEnvironment(Environment):
         self._rng: Optional[Random] = None
         # The episode's randomness, drawn once at reset as standard-normal values per
         # SKU and day and scaled by the SKU's std when used. Steps only read these
-        # tables, so the agent's actions can never change the world it faces.
+        # tables, so the policy's actions can never change the world it faces.
         self._demand_z: Dict[str, List[float]] = {}
         self._lead_time_z: Dict[str, List[float]] = {}
         # Ground-truth open orders: (sku_id, qty, order_day, true_arrival_day).
@@ -122,7 +122,7 @@ class InventoryEnvironment(Environment):
         Deal all of the episode's noise up front from the seeded generator: one
         demand value per SKU per day, and one lead-time value per SKU per order day.
         The same seed therefore gives the same demand on every day, and the same
-        lead time for an order placed on a given day, whatever the agent does.
+        lead time for an order placed on a given day, whatever the policy does.
         """
         days = self._episode_config.no_of_days
         skus = list(self._episode_config.skus)
@@ -132,9 +132,9 @@ class InventoryEnvironment(Environment):
     def resample_future_noise(self, rng: Random) -> None:
         """
         Redraw the demand and lead-time noise from today on, from `rng`: one possible
-        future, as far as the agent can know. Today is included because today's
+        future, as far as the policy can know. Today is included because today's
         demand and the lead time of an order placed today are not known when the
-        agent decides. Meant for copies of an environment (e.g. to score an action
+        policy decides. Meant for copies of an environment (e.g. to score an action
         over several possible futures, training/grpo_reward.py); a normal episode
         never calls it.
         """
@@ -274,7 +274,7 @@ class InventoryEnvironment(Environment):
         # 4 & 5. Fulfill demands
         self._fulfill_demands(true_demands)
 
-        # 6. True lead times for agent orders + clamp to >= 1
+        # 6. True lead times for policy orders + clamp to >= 1
         true_lead_times = self._get_true_lead_times(orders, day)
 
         # 7. Update actual inbound with true lead times
@@ -291,7 +291,7 @@ class InventoryEnvironment(Environment):
         for sku_id, _, order_day, arrival_day in sorted(arriving, key=lambda o: o[2]):
             ts.lead_time_history[sku_id].append(float(arrival_day - order_day))
 
-        # 10. Recalculate the averages the agent sees
+        # 10. Recalculate the averages the policy sees
         self._update_averages()
 
         # 11. Recompute storage usage and advance date
@@ -419,7 +419,7 @@ class InventoryEnvironment(Environment):
         It is 0 when nothing arrived or every weight is 0.
         """
         ts = self._inventory_state
-        # Units rejected today (reported to the agent; 0 = no waste).
+        # Units rejected today (reported to the policy; 0 = no waste).
         ts.inventory_excess_today = sum(wasted.values())
 
         weighted_fraction = 0.0
@@ -487,7 +487,7 @@ class InventoryEnvironment(Environment):
             ts.expected_inbound_orders.append((sku_id, qty, day + round(avg_lt)))
 
     # -----------------------------------------------------------------------
-    # Averages derived from what the agent has observed
+    # Averages derived from what the policy has observed
     # -----------------------------------------------------------------------
 
     def _update_averages(self) -> None:
@@ -544,7 +544,7 @@ class InventoryEnvironment(Environment):
 
     def to_llm_prompt(self) -> str:
         """
-        The prompt an LLM agent sees for today: the system prompt plus today's report,
+        The prompt an LLM policy sees for today: the system prompt plus today's report,
         exactly as built by inference.py (the single source of the prompt).
         """
         import inference  # imported lazily: only needed when a prompt is requested

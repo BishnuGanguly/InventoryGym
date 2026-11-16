@@ -102,7 +102,7 @@ def test_check_refuses_a_task_that_cannot_be_built(tmp_path, capsys):
 
 def test_eval_is_passed_through(tmp_path, capsys):
     out = tmp_path / "run.jsonl"
-    assert cli.main(["eval", "--agent", "baseline", "--episodes", "1", "--tasks", "flu_season",
+    assert cli.main(["eval", "--policy", "baseline", "--episodes", "1", "--tasks", "flu_season",
                      "--workers", "1", "--out", str(out)]) == 0
     assert out.exists() and "flu_season" in capsys.readouterr().out
 
