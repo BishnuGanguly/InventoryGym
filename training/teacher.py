@@ -16,8 +16,8 @@ pairs first gives GRPO a model that already answers sensibly.
     python -m training.teacher --seeds 0:300 --out data/teacher_adjust.jsonl   # the same, as a file
 
 How good the teacher is, in the model's own answer format (50 test seeds per task,
-insights): 0.887 on the surprise tasks (baseline 0.859, "+3 days on every SKU"
-0.869, baseline_insights 0.877, the plan with exact orders 0.892, oracle 0.925) and 0.909
+insights): 0.893 on the surprise tasks (baseline 0.871, "+3 days on every SKU"
+0.879, baseline_insights 0.888, the plan with exact orders 0.898, oracle 0.927) and 0.909
 on the fixed tasks. No model is needed here: everything is the simulator.
 """
 

@@ -1,12 +1,17 @@
 # GRPO reward for the `adjust` answer format
 
+> The reward statistics further down (how often answering 0 was best, how far answers
+> differ) were measured on the earlier random scenario of the pharma tasks. The surprise
+> tasks follow the same design with slightly different ranges; those statistics have not
+> been measured again on them.
+
 Implemented in [`grpo_reward.py`](grpo_reward.py); every rule below has a test in
 [`tests/test_grpo_reward.py`](../tests/test_grpo_reward.py).
 
 ## What one training prompt is
 
-One day of one episode: `(task, seed, day)` in the **random scenario**
-(`scenario="random"`) with **insights**, on **train seeds** only. The state of
+One day of one episode: `(task, seed, day)` of a **surprise task**
+(`tasks.SURPRISE_TASKS`) with **insights**, on **train seeds** only. The state of
 that day is rebuilt exactly by resetting the episode and letting the baseline play
 every earlier day (so the state comes from the baseline's play). The prompt is
 exactly what `agents.LLMAgent` sends in the `adjust` format: the system prompt and a
@@ -77,8 +82,8 @@ behaviour; training after a warm start on the teacher sets both to the teacher
 | Who orders on the days after the answer | `GRPOReward(continuation=...)` | `"baseline"` (default), `"teacher"` |
 
 The teacher is [`teacher.py`](teacher.py): the insights plan (`agents.insights_plan_targets`)
-answering in the `adjust` format. Played over full episodes it scores 0.887 on test
-seeds (baseline 0.859, "+3 days on every SKU" 0.869, `baseline_insights` 0.877, oracle 0.925).
+answering in the `adjust` format. Played over full episodes it scores 0.893 on test
+seeds (baseline 0.871, "+3 days on every SKU" 0.879, `baseline_insights` 0.888, oracle 0.927).
 
 **Why the continuation matters.** With the baseline ordering afterwards, adding many
 days today looks good because nobody will prepare later: the answer is judged as the

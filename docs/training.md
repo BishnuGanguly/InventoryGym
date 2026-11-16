@@ -4,22 +4,22 @@ The teacher (a supervised warm start), the GRPO reward, and the Kaggle notebook 
 
 ## Training reward (GRPO)
 
-`training/grpo_reward.py` scores answers in the `adjust` format for GRPO training, using the simulator only (no model calls). One prompt is one day with visible insights in the random scenario (insights, train seeds), rebuilt by letting the baseline play the earlier days. An answer's reward is how much better than answering 0 it does over the next 15 days (the answer sets today's order, then the baseline orders), averaged over 4 possible futures that every answer to the same prompt shares, in points (hundredths of a day's reward, per day), with small penalties for an answer without JSON (-1) or with values outside 0..10 (-0.25). The rules and the measurements behind each one are in [`training/REWARD.md`](../training/REWARD.md). Scoring a group of 8 answers takes about 0.1 s.
+`training/grpo_reward.py` scores answers in the `adjust` format for GRPO training, using the simulator only (no model calls). One prompt is one day with visible insights of a [surprise task](pharma-world.md#surprise-tasks-products-and-days-drawn-per-seed) (train seeds), rebuilt by letting the baseline play the earlier days. An answer's reward is how much better than answering 0 it does over the next 15 days (the answer sets today's order, then the baseline orders), averaged over 4 possible futures that every answer to the same prompt shares, in points (hundredths of a day's reward, per day), with small penalties for an answer without JSON (-1) or with values outside 0..10 (-0.25). The rules and the measurements behind each one are in [`training/REWARD.md`](../training/REWARD.md). Scoring a group of 8 answers takes about 0.1 s.
 
 ### The teacher: a warm start before GRPO
 
 GRPO only compares the answers the model happens to give, so it starts slowly from a model that has no idea how many days a delay is worth. `training/teacher.py` gives it a head start. The **teacher** is the insights plan (`insights_plan`, see [Insights](results.md#insights-disruptions-announced-ahead-of-time)) answering in the model's own `adjust` format: whole extra days from 0 to 10 for the SKUs in today's insights, 0 for the rest. Played through the model's answer path it scores:
 
-| 50 test seeds per task, insights | Fixed tasks | Random scenario |
+| 50 test seeds per task, insights | Fixed tasks | Surprise tasks |
 |---|:---:|:---:|
-| Baseline | 0.867 | 0.859 |
-| "+3 days on every SKU" | 0.886 | 0.869 |
-| `baseline_insights` (extra-days rule) | 0.903 | 0.877 |
-| **Teacher (insights plan in the `adjust` format)** | **0.909** | **0.887** |
-| `insights_plan` (exact orders) | 0.909 | 0.892 |
-| Oracle | 0.931 | 0.925 |
+| Baseline | 0.867 | 0.871 |
+| "+3 days on every SKU" | 0.886 | 0.879 |
+| `baseline_insights` (extra-days rule) | 0.903 | 0.888 |
+| **Teacher (insights plan in the model's answer format)** | **0.909** | **0.893** |
+| `insights_plan` (exact orders) | 0.909 | 0.898 |
+| Oracle | 0.931 | 0.927 |
 
-The format costs the plan 0.005 in the random scenario, mostly because it cannot go below the baseline's default when demand falls after a peak (allowing -3 would recover 0.003; rounding to whole days costs nothing).
+The answer format costs the plan 0.005 on the surprise tasks, mostly because it cannot go below the baseline's default when demand falls after a peak.
 
 ```bash
 uv run python -m training.teacher --seeds 0:300 --out data/teacher_adjust.jsonl   # supervised examples, no GPU

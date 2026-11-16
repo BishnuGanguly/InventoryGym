@@ -67,7 +67,7 @@ uv run inventorygym eval --agent baseline --episodes 5      # the same options a
 Each day, for 45 to 60 days:
 
 1. **The agent gets a report**: stock on hand, orders on the way, recent demand, recent lead times and how full each storage pool is, per product. With insights switched on, it also gets the announcements published so far.
-2. **The agent orders.** A rule agent returns quantities. An LLM agent answers in one of three formats; by default it only says how many *extra* days of stock to keep on top of a rule's default (see [answer formats](docs/observation-and-answers.md)).
+2. **The agent orders.** A rule agent returns quantities. An LLM agent only says how many *extra* days of stock to keep on top of a rule's default (see [how an agent answers](docs/observation-and-answers.md)).
 3. **The day plays out.** Deliveries arrive after a lead time the agent cannot see in advance, and anything that does not fit in its storage pool is wasted. Customers are served from the shelf.
 4. **The day is scored**: the share of demand served, weighted by how critical each product is, minus the share of deliveries wasted. The episode score is the average day, from 0 to 1 ([scoring](docs/scoring.md)).
 
@@ -167,14 +167,14 @@ All agents are in [`agents.py`](agents.py) and run on any world with `eval.py --
 
 **What the insights are worth**, with insights, in the two settings where the disrupted product and the timing are drawn per seed:
 
-| Agent | Pharma world, random scenario (50 test seeds × 3 tasks) | Grocery example, `surprise_disruptions` (100 test seeds) |
+| Agent | Pharma world, surprise tasks (50 test seeds × 3 tasks) | Grocery example, `surprise_disruptions` (100 test seeds) |
 |---|:---:|:---:|
-| "+3 days on every product" (no reading) | 0.869 | 0.939 |
-| `baseline` | 0.859 | 0.951 |
-| `baseline_insights` | 0.877 | 0.965 |
-| Teacher (`insights_plan` in the LLM's answer format) | 0.887 | 0.968 |
-| `insights_plan` | 0.892 | 0.969 |
-| `oracle` | 0.925 | 0.989 |
+| "+3 days on every product" (no reading) | 0.879 | 0.939 |
+| `baseline` | 0.871 | 0.951 |
+| `baseline_insights` | 0.888 | 0.965 |
+| Teacher (`insights_plan` in the LLM's answer format) | 0.893 | 0.968 |
+| `insights_plan` | 0.898 | 0.969 |
+| `oracle` | 0.927 | 0.989 |
 
 Keeping extra stock of everything helps a little where storage is generous and hurts where it is tight. Reading the insights help in both. Results for small LLMs so far, and the measurements behind these references, are in [Results](docs/results.md): no small model has yet shown a reliable gain over a fixed habit, which is what the training below is for.
 
@@ -245,8 +245,8 @@ Details: [Server, playground and dashboard](docs/server.md).
 | | |
 |---|---|
 | [World files](docs/world-files.md) | Describing your own inventory |
-| [The pharma world](docs/pharma-world.md) | The built-in products, storage and tasks, and its random scenarios |
-| [What the agent sees and how it answers](docs/observation-and-answers.md) | The report, and the `adjust`, `days` and `units` answer formats |
+| [The pharma world](docs/pharma-world.md) | The built-in products, storage and its fixed and surprise tasks |
+| [What the agent sees and how it answers](docs/observation-and-answers.md) | The report, and how rule agents and LLM agents answer |
 | [Scoring](docs/scoring.md) | The daily reward and the episode score |
 | [Results](docs/results.md) | Reference agents, what the insights are worth, small LLMs |
 | [Evaluating an agent](docs/evaluation.md) | `eval.py` in full |
@@ -268,7 +268,7 @@ InventoryGym/
 │   ├── dashboard.py            # The dashboard: your inventory, run, compare
 │   ├── world_wizard.py         # The quick builder: plain words in, a world file out
 │   └── world_forms.py          # A world as editable tables, for the dashboard
-├── tasks.py               # The pharma tasks' random scenarios, seeds, scoring
+├── tasks.py               # The pharma task lists, train and test seeds, scoring
 ├── insights.py                # Insights about a task's disruptions
 ├── agents.py              # Reference agents and LLM agents
 ├── inference.py           # Prompts, the report, answer parsing

@@ -44,6 +44,6 @@ tasks:                                    # the same products under different ev
 - **Prompts and insights are written from the world.** The LLM is told whose inventory it manages (`business`), gets a list of the products with their plain names and descriptions, and reads insights that names those products and the causes you list: *"Planning note: a heat wave is on the way. Sales of ice cream could roughly double in about 7 days and stay high for roughly 2 weeks."* A model may answer with a product's id, its name or one of its `aliases`. All of these fields are optional. The built-in pharma world is the exception: it keeps its original wording, byte for byte, so existing results and trained models stay valid; an edited copy of `pharma.yaml` is a world of its own and gets its words from the file.
 - The pharma world builds exactly the original tasks (checked config by config, so every published score stands). In code: `world.load_world(path)` and `env.reset(world=..., task_name=..., seed=...)`.
 
-`--random-scenarios` remains the pharma world's own, older form of this (its tasks drawn by code in `tasks.py`); other worlds use `draw` and day ranges in the file.
+The pharma world's own surprise tasks (`surprise_delays`, `surprise_outbreak`, `surprise_epidemic`) are written this way in [`worlds/pharma.yaml`](../worlds/pharma.yaml).
 
 **Not yet (planned):** the local LLM runner and dashboard picking a world; training (`training/`) on worlds other than pharma.

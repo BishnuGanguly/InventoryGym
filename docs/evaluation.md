@@ -15,7 +15,7 @@ uv run python eval.py --agent llm --model qwen2.5:3b --base-url http://localhost
                       --split test --episodes 10 --save-steps
 ```
 
-LLM agents answer in adjustment days by default; `--action days` or `--action units` selects the other formats (see the LLM prompt notes above). With `--save-steps`, each step stores the model's own reply (`reply`) and the units actually sent (`orders_sent`).
+LLM agents answer with adjustment days: extra days of stock on top of the baseline's order (see [What the agent sees and how it answers](observation-and-answers.md)). With `--save-steps`, each step stores the model's own reply (`reply`) and the units actually sent (`orders_sent`).
 
 **Running a model on your own computer:** see [`local_llm/README.md`](../local_llm/README.md). One command, e.g. `uv run python local_llm/run_local_llm.py --model qwen2.5:3b`, sets up the model with Ollama the first time and runs it against the baseline and oracle on the same seeds.
 
@@ -23,7 +23,7 @@ LLM agents answer in adjustment days by default; `--action days` or `--action un
 
 ```bash
 uv run python eval.py --agent baseline_insights --insights --split test --episodes 50
-uv run python eval.py --agent insights_plan     --insights --split test --episodes 50 --random-scenarios
+uv run python eval.py --agent insights_plan     --insights --split test --episodes 50 --tasks surprise_delays,surprise_outbreak,surprise_epidemic
 uv run python eval.py --agent llm_insights --insights --model qwen2.5:3b --base-url http://localhost:11434/v1 \
                       --split test --episodes 10 --save-steps
 ```

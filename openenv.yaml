@@ -8,7 +8,7 @@ port: 8000
 
 # The rest describes the environment for people; OpenEnv ignores it.
 title: InventoryGym
-version: "2.0.0"
+version: "3.0.0"
 author: BishnuGanguly
 description: >
   An inventory-management environment for LLM agents. Every day the agent

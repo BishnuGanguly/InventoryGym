@@ -27,7 +27,7 @@ The baseline reaches about 93% of the oracle because the observation holds only 
 | `1` | One fixed template with exact days and multiplier | *SUPPLIER DELAY - insulin: orders placed from day 15 to day 25 will take about 3.7x the normal lead time.* |
 | `2` | Varied wording; timing relative to publication and approximate (±1–2 days); severity in words or a rounded number; generic product names (*blood-pressure medication* for `bp_medication`) | *Logistics warning: because of a strike at the cold-chain carrier, deliveries of insulin will be severely delayed, starting in about 5 days, for about 10 days.* |
 
-The observation's `insights` list holds every item already published whose event has not ended, each prefixed with its publication day (`"Day 9: ..."`). It also appears in the LLM report when not empty. Use it with `eval.py --insights` or `--insights`, or `env.reset(task_name=..., seed=..., insights=2)`; add `--random-scenarios` (`scenario="random"`) to draw the disrupted SKUs and days per seed (see [Scenarios](pharma-world.md#scenarios-fixed-or-random)). False alarms and irrelevant insights are planned for a later level.
+The observation's `insights` list holds every item already published whose event has not ended, each prefixed with its publication day (`"Day 9: ..."`). It also appears in the LLM report when not empty. Use it with `eval.py --insights` or `env.reset(task_name=..., seed=..., insights=True)`; the [surprise tasks](pharma-world.md#surprise-tasks-products-and-days-drawn-per-seed) draw the disrupted SKUs and days per seed. False alarms and irrelevant insights are planned for later.
 
 **Hybrid agent (`llm_insights`).** The baseline does the arithmetic, and the LLM only reads the insights and answers with **extra safety days per SKU** (`inference.INSIGHTS_SYSTEM_PROMPT`), e.g. `{"insulin": 6, "paracetamol": 0, ...}`. The extra days are clipped to 0–15 and so that total cover stays within 18 days (storage holds about 21). On days without insights the model is not called, so the agent plays exactly like the baseline. A confused model can therefore cost little, and any gain from the insights lift the score *above* the baseline.
 
@@ -52,15 +52,20 @@ The target is the forecast demand over that cover period plus 3 safety days, cap
 |---|:---:|:---:|:---:|:---:|
 | `baseline_insights`, with insights | 0.898 ± 0.005 | 0.904 ± 0.004 | 0.907 ± 0.004 | 56% |
 | `insights_plan`, with insights | 0.907 ± 0.003 | 0.911 ± 0.002 | 0.907 ± 0.003 | 64% |
-| `baseline_insights`, random scenario | 0.892 ± 0.006 | 0.877 ± 0.015 | 0.861 ± 0.019 | 27% |
-| `insights_plan`, random scenario | 0.906 ± 0.003 | 0.889 ± 0.009 | 0.881 ± 0.011 | 50% |
 
-Seed by seed, `insights_plan` beats `baseline_insights` by +0.006 ± 0.002 on the fixed tasks and +0.015 ± 0.005 in the random scenario. The difference is largest where storage is tight and the disrupted SKU is not known in advance, which is where a plan that sizes orders to the delay and to the pool matters most.
+| Agent (50 test seeds per task) | Surprise Delays | Surprise Outbreak | Surprise Epidemic | Gap to oracle closed |
+|---|:---:|:---:|:---:|:---:|
+| `baseline_insights`, with insights | 0.898 ± 0.006 | 0.885 ± 0.014 | 0.880 ± 0.016 | 30% |
+| `insights_plan`, with insights | 0.909 ± 0.003 | 0.891 ± 0.008 | 0.892 ± 0.009 | 47% |
+
+Seed by seed, `insights_plan` beats `baseline_insights` by +0.006 ± 0.002 on the fixed tasks and +0.010 ± 0.004 on the [surprise tasks](pharma-world.md#surprise-tasks-products-and-days-drawn-per-seed). The difference is largest where storage is tight and the disrupted SKU is not known in advance, which is where a plan that sizes orders to the delay and to the pool matters most.
 
 
 ## LLM results
 
 Small models run locally with Ollama (`local_llm/run_local_llm.py`, temperature 0.2) on test seeds. Every run below is scored under the **current** reward (fill weighted by `stockout_penalty`): each episode saved the exact order sent every day, and since a seed fixes the world, replaying those orders in the current environment reproduces the run exactly (the same fill rate for every SKU on every day) and gives its score under today's reward. The reference agents are scored on the same seeds. The prompts also changed between runs (each run used the prompt of its answer format at the time); rescoring changes only the reward, not what the model saw.
+
+The LLM agent now has one answer format, `adjust`. The `units` and `days` rows are from two earlier formats that were removed because of what these runs showed; they are kept as the record of why.
 
 | Model | Answer format | Insights | Episodes | Score | Baseline | +2 days for every SKU | Oracle |
 |---|---|---|---|:---:|:---:|:---:|:---:|
