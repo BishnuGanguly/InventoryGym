@@ -28,7 +28,7 @@ storage:
 
 products:
   milk:
-    name: fresh milk                 # how prompts and news call it (default: the id)
+    name: fresh milk                 # how prompts and insights call it (default: the id)
     description: sold daily, spoils fast
     aliases: [whole milk]            # other names a model may use in its answer
     storage: fridge
@@ -67,8 +67,8 @@ products:
     stockout_penalty: 10
     waste_penalty: 1
 
-# The reasons level-2 news gives for this world's disruptions.
-news:
+# The reasons insights give for this world's disruptions.
+insights:
   delay_causes:
     - a strike at the regional distribution centre
     - a flooded motorway
@@ -101,7 +101,7 @@ tasks:
       - {type: supplier_delay, product: milk, start_day: 15, end_day: 24, multiplier: [2, 3]}
 
   # A task whose place and time are drawn per seed: every seed is a different episode,
-  # so no fixed timetable works and the news has to be read.
+  # so no fixed timetable works and the insights have to be read.
   surprise_disruptions:
     description: >
       A delivery strike hits one product and demand for another rises, both drawn per

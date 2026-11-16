@@ -5,7 +5,7 @@ and do those answers get different rewards?
 GRPO learns only from differences between the answers to one prompt: if all 8 answers
 are the same, or all score the same, that prompt teaches nothing. This script picks a few
 days where the answer matters (one per task by default, from train seeds, random scenario,
-level-2 news), asks the model 8 times per day at a sampling temperature, scores every
+insights), asks the model 8 times per day at a sampling temperature, scores every
 answer with the GRPO reward (training/grpo_reward.py), and says whether there is enough
 variety to train on.
 
@@ -34,8 +34,8 @@ sys.path.insert(0, str(ROOT / "local_llm"))
 import inference  # noqa: E402
 import run_local_llm as R  # noqa: E402
 from tasks import TASK_REGISTRY, TRAIN_SEEDS  # noqa: E402
-from training.grpo_reward import DayPrompt, GRPOReward, build_state, news_day_prompts, prompt_messages  # noqa: E402
-from training.probe import REFERENCE_DAYS, news_skus, reference_rewards  # noqa: E402,F401
+from training.grpo_reward import DayPrompt, GRPOReward, build_state, insights_day_prompts, prompt_messages  # noqa: E402
+from training.probe import REFERENCE_DAYS, insights_skus, reference_rewards  # noqa: E402,F401
 
 DEFAULT_MODEL = "phi4-mini"
 MIN_SPREAD = 0.5                   # points between the best and worst reference answer: "the answer matters"
@@ -50,7 +50,7 @@ def pick_prompts(reward: GRPOReward, count: int, seeds: Sequence[int]) -> List[D
     taking the tasks in turn so the days cover different tasks. Deterministic.
     """
     tasks = sorted(TASK_REGISTRY)
-    candidates = {t: news_day_prompts([t], seeds) for t in tasks}
+    candidates = {t: insights_day_prompts([t], seeds) for t in tasks}
     picked: List[DayPrompt] = []
     position = {t: 0 for t in tasks}
     while len(picked) < count and any(position[t] < len(candidates[t]) for t in tasks):
@@ -84,7 +84,7 @@ def analyse(reward: GRPOReward, prompt: DayPrompt, answers: List[str]) -> Dict[s
                 for s in scored}
     return {
         "prompt": prompt.__dict__,
-        "news": build_state(prompt)[1].news,
+        "insights": build_state(prompt)[1].insights,
         "answers": [{"text": a, **s} for a, s in zip(answers, scored)],
         "distinct_answers": len(distinct),
         "no_json": sum(s["penalty"] == -1.0 for s in scored),
@@ -119,10 +119,10 @@ def verdict(results: List[Dict[str, Any]]) -> str:
 def print_prompt(result: Dict[str, Any], show: int) -> None:
     p = result["prompt"]
     print(f"\n--- {p['task']}, seed {p['seed']}, day {p['day']} ---")
-    for item in result["news"]:
-        print(f"  news: {item[:150]}")
+    for item in result["insights"]:
+        print(f"  insights: {item[:150]}")
     ref = "  ".join(f"+{k}: {v:+.2f}" for k, v in result["reference"].items())
-    print(f"  reference answers for the SKUs in the news: {ref}")
+    print(f"  reference answers for the SKUs in the insights: {ref}")
     for a in result["answers"][:show]:
         shown = {k: v for k, v in a["extra_days"].items() if v} if a["penalty"] != -1.0 else "no JSON"
         print(f"  {a['reward']:+6.2f}  {shown}")
@@ -158,7 +158,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     client = OpenAI(base_url=args.base_url, api_key="not-needed", timeout=args.timeout, max_retries=1)
     reward = GRPOReward()
-    print("Choosing days where the answer matters (train seeds, random scenario, level-2 news)...", flush=True)
+    print("Choosing days where the answer matters (train seeds, random scenario, insights)...", flush=True)
     prompts = pick_prompts(reward, args.prompts, TRAIN_SEEDS[:40])
     calls = len(prompts) * args.samples * len(temperatures)
     print(f"Model {model}: {len(prompts)} days x {args.samples} answers x {len(temperatures)} temperature(s) "

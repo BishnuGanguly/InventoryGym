@@ -1,4 +1,4 @@
-"""Tests for prompts and news written from the world file (world.py wording, news.py, inference.py)."""
+"""Tests for prompts and insights written from the world file (world.py wording, insights.py, inference.py)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 import inference
-from agents import LLMAgent, NewsLLMAgent
+from agents import LLMAgent, InsightsLLMAgent
 from models import InventoryState, InventoryAction
 from server.inventory_environment import InventoryEnvironment
 from tasks import PHARMA_WORLD, TASK_REGISTRY, get_task_config
@@ -33,9 +33,9 @@ def pharma_copy(**changes):
     return load_world(data)
 
 
-def reset(world, task, news=2, seed=1):
+def reset(world, task, insights=True, seed=1):
     env = InventoryEnvironment()
-    return env, env.reset(world=world, task_name=task, seed=seed, news=news)
+    return env, env.reset(world=world, task_name=task, seed=seed, insights=insights)
 
 
 def two_pool_grocery():
@@ -52,11 +52,11 @@ def two_pool_grocery():
 def test_only_the_built_in_pharma_world_keeps_the_original_wording():
     for task in TASK_REGISTRY:
         config = build_episode(PHARMA_WORLD, task, 3)
-        assert config.context is None and config.news_wording is None
+        assert config.context is None and config.insights_wording is None
     copied = build_episode(pharma_copy(), "flu_season", 3)
     assert copied.context.business == "a pharmaceutical warehouse"
     assert copied.context.products["bp_medication"].name == "blood-pressure medication"
-    assert copied.news_wording.surge_causes["paracetamol"] == "an early flu season"
+    assert copied.insights_wording.surge_causes["paracetamol"] == "an early flu season"
 
 
 def test_context_comes_from_the_world_file_with_sensible_defaults():
@@ -65,12 +65,12 @@ def test_context_comes_from_the_world_file_with_sensible_defaults():
     assert config.context.business == "a neighbourhood grocery store"
     assert (products["milk"].name, products["milk"].aliases) == ("fresh milk", ["whole milk"])
     assert products["ice_cream"].name == "ice cream"                  # default: the id with spaces
-    assert config.news_wording.surge_causes["ice_cream"] == "a heat wave"
+    assert config.insights_wording.surge_causes["ice_cream"] == "a heat wave"
     bare = grocery_data()
-    del bare["business"], bare["news"]
+    del bare["business"], bare["insights"]
     plain = build_episode(load_world(bare), "holiday_rush", 1)
-    assert plain.context.business == "a warehouse" and plain.news_wording.default_surge_cause == "a rise in demand"
-    assert plain.news_wording.delay_causes                             # the general defaults
+    assert plain.context.business == "a warehouse" and plain.insights_wording.default_surge_cause == "a rise in demand"
+    assert plain.insights_wording.delay_causes                             # the general defaults
 
 
 def test_observation_carries_the_context_and_survives_a_round_trip():
@@ -81,8 +81,8 @@ def test_observation_carries_the_context_and_survives_a_round_trip():
 
 
 @pytest.mark.parametrize("change, message", [
-    ({"news": {"surge_causes": {"bread": "a bake sale"}}}, "unknown product(s) ['bread']"),
-    ({"news": {"delay_causes": []}}, "delay_causes"),
+    ({"insights": {"surge_causes": {"bread": "a bake sale"}}}, "unknown product(s) ['bread']"),
+    ({"insights": {"delay_causes": []}}, "delay_causes"),
     ({"business": ""}, "business"),
 ])
 def test_bad_wording_is_explained(change, message):
@@ -99,12 +99,12 @@ def test_names_and_aliases_must_point_to_one_product():
 
 
 # ---------------------------------------------------------------------------
-# News
+# Insights
 # ---------------------------------------------------------------------------
 
-def test_news_uses_the_worlds_product_names_and_causes():
+def test_insights_uses_the_worlds_product_names_and_causes():
     messages = [e.message for task in ("holiday_rush", "delivery_strike") for seed in range(12)
-                for e in get_task_config(task, seed, news=2, world=GROCERY).news]
+                for e in get_task_config(task, seed, insights=True, world=GROCERY).insights]
     text = " ".join(messages)
     assert "fresh milk" in text and "ice cream" in text and "ice_cream" not in text
     assert "a holiday promotion" in text and "a heat wave" in text
@@ -116,10 +116,10 @@ def test_news_uses_the_worlds_product_names_and_causes():
 
 def test_cold_chain_causes_fall_back_to_the_general_ones_when_empty():
     data = grocery_data()
-    data["news"]["cold_chain_delay_causes"] = []
+    data["insights"]["cold_chain_delay_causes"] = []
     world = load_world(data)
-    messages = [e.message for seed in range(8) for e in get_task_config("delivery_strike", seed, news=2, world=world).news]
-    assert all(any(c in m for c in world.news.delay_causes) for m in messages)
+    messages = [e.message for seed in range(8) for e in get_task_config("delivery_strike", seed, insights=True, world=world).insights]
+    assert all(any(c in m for c in world.insights.delay_causes) for m in messages)
 
 
 def test_a_worlds_own_wording_draws_the_same_random_numbers():
@@ -127,16 +127,15 @@ def test_a_worlds_own_wording_draws_the_same_random_numbers():
     copy_world = pharma_copy()
     for task in TASK_REGISTRY:
         for seed in range(6):
-            original = get_task_config(task, seed, news=2).news
-            copied = get_task_config(task, seed, news=2, world=copy_world).news
+            original = get_task_config(task, seed, insights=True).insights
+            copied = get_task_config(task, seed, insights=True, world=copy_world).insights
             assert [(e.kind, e.sku_id, e.announce_day) for e in original] == [(e.kind, e.sku_id, e.announce_day) for e in copied]
             for a, b in zip(original, copied):
                 if a.kind == "supplier_delay":
                     assert a.message == b.message
                 else:
                     assert a.message != b.message and "Health authorities" not in b.message
-    level1 = get_task_config("flu_season", 2, news=1)
-    assert [e.message for e in level1.news] == [e.message for e in get_task_config("flu_season", 2, news=1, world=copy_world).news]
+
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +143,11 @@ def test_a_worlds_own_wording_draws_the_same_random_numbers():
 # ---------------------------------------------------------------------------
 
 def test_pharma_prompts_are_the_original_constants():
-    obs = InventoryEnvironment().reset(task_name="flu_season", seed=1, news=2)
+    obs = InventoryEnvironment().reset(task_name="flu_season", seed=1, insights=True)
     assert inference.system_prompt("units", obs) == inference.system_prompt("units") == inference.SYSTEM_PROMPT
     assert inference.system_prompt("days", obs) == inference.SYSTEM_PROMPT_DAYS
     assert inference.system_prompt("adjust", obs) == inference.SYSTEM_PROMPT_ADJUST
-    assert inference.news_system_prompt(obs) == inference.news_system_prompt() == inference.NEWS_SYSTEM_PROMPT
+    assert inference.insights_system_prompt(obs) == inference.insights_system_prompt() == inference.INSIGHTS_SYSTEM_PROMPT
     assert inference.sku_aliases(obs) is inference.SKU_ALIASES
 
 
@@ -168,7 +167,7 @@ def test_prompts_describe_the_world_and_its_pools(action):
 
 @pytest.mark.parametrize("action", ACTIONS)
 def test_a_cold_plus_ambient_world_keeps_the_cold_and_ambient_report_keys(action):
-    _, obs = reset(two_pool_grocery(), "normal_weeks", news=0)
+    _, obs = reset(two_pool_grocery(), "normal_weeks", insights=False)
     prompt = inference.system_prompt(action, obs)
     assert "grocery store" in prompt and "Two storage pools:" in prompt and "cold_days and ambient_days" in prompt
     assert "storage_pool                 — " not in prompt
@@ -184,14 +183,14 @@ def test_every_swap_still_matches_the_prompt_texts():
         inference._swap("abc", "x", "y")
 
 
-def test_news_adviser_prompt_lists_the_worlds_products():
+def test_insights_adviser_prompt_lists_the_worlds_products():
     _, obs = reset(GROCERY, "holiday_rush")
-    prompt = inference.news_system_prompt(obs)
+    prompt = inference.insights_system_prompt(obs)
     assert "the procurement team of a neighbourhood grocery store" in prompt
     assert "milk       - fresh milk, sold daily, spoils fast, kept in cold storage" in prompt
     assert "biscuits   - biscuits\n\nGUIDELINES" in prompt
     assert not any(word in prompt.lower() for word in PHARMA_WORDS)
-    assert prompt.split("GUIDELINES")[1] == inference.NEWS_SYSTEM_PROMPT.split("GUIDELINES")[1]
+    assert prompt.split("GUIDELINES")[1] == inference.INSIGHTS_SYSTEM_PROMPT.split("GUIDELINES")[1]
 
 
 def test_answers_may_use_a_products_name_or_alias():
@@ -212,11 +211,11 @@ def test_agents_send_the_worlds_prompts():
 
     client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     env, obs = reset(GROCERY, "holiday_rush")
-    while not obs.news:
+    while not obs.insights:
         obs = env.step(InventoryAction(message="{}"))
     LLMAgent("stub", "x", "x", client=client).act(obs, [])
-    NewsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
     assert sent[0][0]["content"] == inference.system_prompt("adjust", obs)
-    assert sent[1][0]["content"] == inference.news_system_prompt(obs)
+    assert sent[1][0]["content"] == inference.insights_system_prompt(obs)
     assert "grocery store" in sent[0][0]["content"] and "grocery store" in sent[1][0]["content"]
     assert "neighbourhood grocery store" in env.to_llm_prompt()

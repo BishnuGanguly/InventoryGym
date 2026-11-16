@@ -2,9 +2,9 @@
 GRPO reward for the `adjust` answer format. The rules, and why each was chosen, are in
 training/REWARD.md.
 
-    from training.grpo_reward import GRPOReward, news_day_prompts
+    from training.grpo_reward import GRPOReward, insights_day_prompts
 
-    prompts = news_day_prompts(tasks, seeds=range(0, 300))   # train seeds, news days only
+    prompts = insights_day_prompts(tasks, seeds=range(0, 300))   # train seeds, days with insights only
     reward = GRPOReward()
     reward(completions, task=[...], seed=[...], day=[...])   # one float per completion
 
@@ -39,9 +39,9 @@ POINTS = 100.0 / HORIZON  # reward units: hundredths of a day's reward, per day
 PENALTY_NO_JSON = -1.0
 PENALTY_OUT_OF_RANGE = -0.25
 SCENARIO = "random"
-NEWS_LEVEL = 2
+INSIGHTS = True
 # Who can play the days around the scored answer: the baseline, or the teacher
-# (training/teacher.py: the news plan answering in the `adjust` format).
+# (training/teacher.py: the insights plan answering in the `adjust` format).
 PLAYERS = ("baseline", "teacher")
 JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)  # the same check as eval.py's parse failures
 
@@ -56,7 +56,7 @@ class DayPrompt:
     seed: int
     day: int
     scenario: str = SCENARIO
-    news: int = NEWS_LEVEL
+    insights: bool = INSIGHTS
     states: str = "baseline"    # who played the earlier days (one of PLAYERS)
 
 
@@ -80,7 +80,7 @@ def build_state(prompt: DayPrompt) -> Tuple[InventoryEnvironment, InventoryState
     have (as in eval.run_episode). Deterministic: the same prompt always gives the same state.
     """
     env = InventoryEnvironment()
-    obs = env.reset(task_name=prompt.task, seed=prompt.seed, news=prompt.news, scenario=prompt.scenario)
+    obs = env.reset(task_name=prompt.task, seed=prompt.seed, insights=prompt.insights, scenario=prompt.scenario)
     agent, history = player(prompt.states, env), []
     while obs.current_date < prompt.day:
         if obs.done:
@@ -101,26 +101,26 @@ def prompt_messages(prompt: DayPrompt) -> List[Dict[str, str]]:
             {"role": "user", "content": user}]
 
 
-def news_day_prompts(
+def insights_day_prompts(
     tasks: Iterable[str],
     seeds: Iterable[int],
     scenario: str = SCENARIO,
-    news: int = NEWS_LEVEL,
+    insights: bool = INSIGHTS,
     states: str = "baseline",
 ) -> List[DayPrompt]:
     """
-    Every day with visible news in the given episodes (days without news teach nothing),
+    Every day with visible insights in the given episodes (days without insights teach nothing),
     with `states` (the baseline or the teacher) playing the episode.
     """
     prompts = []
     for task in tasks:
         for seed in seeds:
             env = InventoryEnvironment()
-            obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
+            obs = env.reset(task_name=task, seed=seed, insights=insights, scenario=scenario)
             agent = player(states, env)
             while not obs.done:
-                if obs.news:
-                    prompts.append(DayPrompt(task, seed, obs.current_date, scenario, news, states))
+                if obs.insights:
+                    prompts.append(DayPrompt(task, seed, obs.current_date, scenario, insights, states))
                 obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
     return prompts
 
@@ -149,7 +149,7 @@ def parse_answer(obs: InventoryState, text: str) -> Tuple[Dict[str, float], floa
 
 def future_rng(prompt: DayPrompt, index: int) -> Random:
     """Future `index` of a prompt: the same for every answer to that prompt."""
-    return Random(f"future|{prompt.task}|{prompt.seed}|{prompt.day}|{prompt.scenario}|{prompt.news}|{index}")
+    return Random(f"future|{prompt.task}|{prompt.seed}|{prompt.day}|{prompt.scenario}|{prompt.insights}|{index}")
 
 
 def play_forward(env: InventoryEnvironment, obs: InventoryState, extra: Dict[str, float], horizon: int = HORIZON,
@@ -216,12 +216,12 @@ class GRPOReward:
 
     @staticmethod
     def prompts_of(task: Sequence[str], seed: Sequence[int], day: Sequence[int],
-                   scenario: Optional[Sequence[str]] = None, news: Optional[Sequence[int]] = None,
+                   scenario: Optional[Sequence[str]] = None, insights: Optional[Sequence[int]] = None,
                    states: Optional[Sequence[str]] = None) -> List[DayPrompt]:
         """The DayPrompt of each row, from the dataset columns TRL passes to a reward function."""
         return [DayPrompt(task[i], int(seed[i]), int(day[i]),
                           scenario[i] if scenario is not None else SCENARIO,
-                          int(news[i]) if news is not None else NEWS_LEVEL,
+                          bool(insights[i]) if insights is not None else INSIGHTS,
                           states[i] if states is not None else "baseline")
                 for i in range(len(task))]
 
@@ -235,9 +235,9 @@ class GRPOReward:
 
     def __call__(self, completions: Sequence[Any], task: Sequence[str], seed: Sequence[int],
                  day: Sequence[int], scenario: Optional[Sequence[str]] = None,
-                 news: Optional[Sequence[int]] = None, states: Optional[Sequence[str]] = None,
+                 insights: Optional[Sequence[int]] = None, states: Optional[Sequence[str]] = None,
                  **_: Any) -> List[float]:
-        prompts = self.prompts_of(task, seed, day, scenario, news, states)
+        prompts = self.prompts_of(task, seed, day, scenario, insights, states)
         return [self.score_answer(prompt, completion_text(completion))["reward"]
                 for prompt, completion in zip(prompts, completions)]
 

@@ -70,10 +70,10 @@ def test_events_with_the_same_draw_name_hit_the_same_product():
         assert delays[surge_sku][:2] in ((18, 26), (5, 26))          # rice may get both delays
 
 
-def test_news_follows_the_drawn_product():
+def test_insights_follows_the_drawn_product():
     for seed in range(20):
-        config = get_task_config("surprise_disruptions", seed, news=1, world=GROCERY)
-        assert {e.sku_id for e in config.news if e.kind == "supplier_delay"} == set(delayed(config))
+        config = get_task_config("surprise_disruptions", seed, insights=True, world=GROCERY)
+        assert {e.sku_id for e in config.insights if e.kind == "supplier_delay"} == set(delayed(config))
 
 
 # ---------------------------------------------------------------------------
@@ -180,12 +180,12 @@ def test_any_is_reserved():
 # Agents on a drawn task
 # ---------------------------------------------------------------------------
 
-def test_reading_the_news_pays_on_the_drawn_task():
+def test_reading_the_insights_pays_on_the_drawn_task():
     seeds = range(10000, 10012)
 
     def mean(agent):
-        return sum(E.run_episode(agent, "surprise_disruptions", s, news=2, world=GROCERY)["score"] for s in seeds) / 12
+        return sum(E.run_episode(agent, "surprise_disruptions", s, insights=True, world=GROCERY)["score"] for s in seeds) / 12
 
-    nothing, baseline, plan, oracle = mean("nothing"), mean("baseline"), mean("news_plan"), mean("oracle")
+    nothing, baseline, plan, oracle = mean("nothing"), mean("baseline"), mean("insights_plan"), mean("oracle")
     assert nothing < 0.1 < baseline < plan < oracle
     assert plan - baseline > 0.01

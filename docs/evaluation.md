@@ -19,12 +19,12 @@ LLM agents answer in adjustment days by default; `--action days` or `--action un
 
 **Running a model on your own computer:** see [`local_llm/README.md`](../local_llm/README.md). One command, e.g. `uv run python local_llm/run_local_llm.py --model qwen2.5:3b`, sets up the model with Ollama the first time and runs it against the baseline and oracle on the same seeds.
 
-**Agents** (`agents.py`): `nothing` (the floor), `baseline` (an order-up-to rule), `oracle` (reads the episode's hidden demand and lead times and plans just-in-time deliveries; the ceiling, never something to train against), `llm` (the same prompt as `inference.py`), and, for news (`--news 1` or `2`), `baseline_news` and `news_plan` (perfect news reading with an extra-days rule and with an inventory plan; references) and `llm_news` (the hybrid: the LLM reads the news, the baseline orders).
+**Agents** (`agents.py`): `nothing` (the floor), `baseline` (an order-up-to rule), `oracle` (reads the episode's hidden demand and lead times and plans just-in-time deliveries; the ceiling, never something to train against), `llm` (the same prompt as `inference.py`), and, for insights (`--insights` or `2`), `baseline_insights` and `insights_plan` (perfect reading of the insights with an extra-days rule and with an inventory plan; references) and `llm_insights` (the hybrid: the LLM reads the insights, the baseline orders).
 
 ```bash
-uv run python eval.py --agent baseline_news --news 2 --split test --episodes 50
-uv run python eval.py --agent news_plan     --news 2 --split test --episodes 50 --random-scenarios
-uv run python eval.py --agent llm_news --news 2 --model qwen2.5:3b --base-url http://localhost:11434/v1 \
+uv run python eval.py --agent baseline_insights --insights --split test --episodes 50
+uv run python eval.py --agent insights_plan     --insights --split test --episodes 50 --random-scenarios
+uv run python eval.py --agent llm_insights --insights --model qwen2.5:3b --base-url http://localhost:11434/v1 \
                       --split test --episodes 10 --save-steps
 ```
 

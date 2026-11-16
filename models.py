@@ -37,11 +37,11 @@ class StoragePoolState(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# World context: the words that describe a world, for prompts and news
+# World context: the words that describe a world, for prompts and insights
 # ---------------------------------------------------------------------------
 
 class ProductInfo(BaseModel):
-    """How a product is called and described in prompts and news."""
+    """How a product is called and described in prompts and insights."""
 
     name: str = Field(description="The product's name in plain words, e.g. 'fresh milk' for sku 'milk'.")
     description: str = Field(default="", description="One short line about the product, shown in prompts.")
@@ -62,8 +62,8 @@ class WorldContext(BaseModel):
     products: Dict[str, ProductInfo] = Field(default_factory=dict, description="Per-SKU names, keyed by sku_id.")
 
 
-class NewsWording(BaseModel):
-    """The causes level-2 news gives for a world's disruptions."""
+class InsightWording(BaseModel):
+    """The causes insights give for a world's disruptions."""
 
     delay_causes: List[str] = Field(min_length=1, description="Reasons for a supplier delay, e.g. 'a port strike'.")
     cold_chain_delay_causes: List[str] = Field(
@@ -87,7 +87,7 @@ class SKUState(BaseModel):
         description="Unique identifier for the SKU. Used as the key in all order and inventory dicts."
     )
 
-    # -- Insights (derived from observable history — agent sees these) -------
+    # -- Averages (derived from observable history — agent sees these) -------
 
     avg_demand_per_day: float = Field(
         default=0.0,
@@ -322,14 +322,14 @@ class InventoryState(Observation):
         ),
     )
 
-    # -- News ----------------------------------------------------------------
+    # -- Insights ----------------------------------------------------------------
 
-    news: List[str] = Field(
+    insights: List[str] = Field(
         default_factory=list,
         description=(
-            "Announcements the agent can see today: every news item already published whose "
+            "Announcements the agent can see today: every insight already published whose "
             "event has not ended yet, each starting with the day it was published. "
-            "Empty when the episode has no news (news level 0)."
+            "Empty when insights are off."
         ),
     )
 
@@ -502,10 +502,10 @@ class SKUEpisodeConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# NewsEvent
+# InsightEvent
 # ---------------------------------------------------------------------------
 
-class NewsEvent(BaseModel):
+class InsightEvent(BaseModel):
     """
     A disruption of the episode, announced to the agent before it starts.
 
@@ -525,11 +525,11 @@ class NewsEvent(BaseModel):
         gt=0.0,
         description="Peak multiplier of the SKU's lead time (supplier_delay) or demand (demand_surge).",
     )
-    announce_day: int = Field(ge=0, description="Day the news is published.")
-    message: str = Field(description="The news text the agent reads.")
+    announce_day: int = Field(ge=0, description="Day the insights are published.")
+    message: str = Field(description="The insights text the agent reads.")
 
     @model_validator(mode="after")
-    def validate_days(self) -> NewsEvent:
+    def validate_days(self) -> InsightEvent:
         if not self.start_day <= self.peak_day <= self.end_day:
             raise ValueError("need start_day <= peak_day <= end_day")
         if self.announce_day > self.end_day:
@@ -589,24 +589,24 @@ class EpisodeConfig(BaseModel):
         default_factory=dict,
         description="Initial inventory levels for each SKU keyed by sku_id."
     )
-    news: List[NewsEvent] = Field(
+    insights: List[InsightEvent] = Field(
         default_factory=list,
         description=(
-            "Disruptions announced to the agent ahead of time (see NewsEvent). "
-            "Empty for news level 0, the original environment."
+            "Disruptions announced to the agent ahead of time (see InsightEvent). "
+            "Empty when insights are off."
         ),
     )
 
     context: Optional[WorldContext] = Field(
         default=None,
         description=(
-            "Whose inventory this is and how the products are called, for prompts and news. "
+            "Whose inventory this is and how the products are called, for prompts and insights. "
             "None: the original pharma wording."
         ),
     )
-    news_wording: Optional[NewsWording] = Field(
+    insights_wording: Optional[InsightWording] = Field(
         default=None,
-        description="Causes named by level-2 news. None: the original pharma wording.",
+        description="Causes named by insights. None: the original pharma wording.",
     )
 
     @model_validator(mode="after")

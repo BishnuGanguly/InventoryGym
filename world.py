@@ -54,22 +54,22 @@ a different episode, let the task draw them:
                   less room, keeping extra stock of everything stops being free.
 
 Products and days are drawn from a second generator, so a task and a copy of it with
-ranges have the same demand, lead times and event sizes for a seed. News follows
+ranges have the same demand, lead times and event sizes for a seed. Insights follow
 whatever was drawn.
 
 Words
 -----
-Prompts and level-2 news are written from the world, so an agent reads about your
+Prompts and insights are written from the world, so an agent reads about your
 business and your products:
 
     business      whose inventory this is, e.g. "a grocery store" (default "a warehouse")
     products.<id> name (default: the id with spaces), description, aliases (other names
                   a model may use for the product in its answer)
-    news          delay_causes, cold_chain_delay_causes (for products in cold-chain
+    insights          delay_causes, cold_chain_delay_causes (for products in cold-chain
                   storage), surge_causes per product, default_surge_cause
 
 All are optional. The built-in pharma world is the one exception: it keeps its original
-prompt and news wording, which models trained on it rely on.
+prompt and insights wording, which models trained on it rely on.
 
 Storage
 -------
@@ -93,8 +93,8 @@ from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Tuple
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from models import EpisodeConfig, NewsWording, ProductInfo, SKUEpisodeConfig, StoragePoolConfig, WorldContext
-from news import COLD_CHAIN_CAUSES, DELAY_CAUSES
+from models import EpisodeConfig, InsightWording, ProductInfo, SKUEpisodeConfig, StoragePoolConfig, WorldContext
+from insights import COLD_CHAIN_CAUSES, DELAY_CAUSES
 
 WORLDS_DIR = Path(__file__).resolve().parent / "worlds"
 DEFAULT_WORLD = "pharma"
@@ -212,7 +212,7 @@ class Product(_Strict):
     waste_penalty: float = Field(ge=0.0, description="How much a wasted delivery of this product costs (relative).")
     name: Optional[str] = Field(
         default=None, min_length=1,
-        description="The product's name in prompts and news; default: its id with '_' as spaces.",
+        description="The product's name in prompts and insights; default: its id with '_' as spaces.",
     )
     description: str = Field(default="", description="One short line about the product, shown in prompts.")
     aliases: List[str] = Field(default_factory=list, description="Other names a model may use for it in answers.")
@@ -335,8 +335,8 @@ class Task(_Strict):
     events: List[Event] = Field(default_factory=list)
 
 
-class NewsText(_Strict):
-    """The causes level-2 news gives for this world's disruptions."""
+class InsightText(_Strict):
+    """The causes insights give for this world's disruptions."""
 
     delay_causes: List[str] = Field(default_factory=lambda: list(DELAY_CAUSES), min_length=1,
                                     description="Reasons for a supplier delay, e.g. 'a port strike'.")
@@ -358,7 +358,7 @@ class World(_Strict):
                           description="Whose inventory this is, as it reads after 'of', e.g. 'a grocery store'.")
     days: int = Field(gt=0, description="Episode length in days.")
     noise: Noise = Field(default_factory=Noise)
-    news: NewsText = Field(default_factory=NewsText)
+    insights: InsightText = Field(default_factory=InsightText)
     storage: Dict[str, StoragePool] = Field(min_length=1)
     products: Dict[str, Product] = Field(min_length=1)
     tasks: Dict[str, Task] = Field(min_length=1)
@@ -369,9 +369,9 @@ class World(_Strict):
             if product.storage not in self.storage:
                 raise ValueError(f"product '{name}' uses storage '{product.storage}', "
                                  f"which is not defined (storage pools: {sorted(self.storage)})")
-        unknown = sorted(set(self.news.surge_causes) - set(self.products))
+        unknown = sorted(set(self.insights.surge_causes) - set(self.products))
         if unknown:
-            raise ValueError(f"news.surge_causes names unknown product(s) {unknown} "
+            raise ValueError(f"insights.surge_causes names unknown product(s) {unknown} "
                              f"(products: {sorted(self.products)})")
         # A name or alias must point to one product, or an answer using it would be ambiguous.
         seen: Dict[str, str] = {}
@@ -417,7 +417,7 @@ class World(_Strict):
         return list(self.tasks)
 
     def context(self) -> WorldContext:
-        """The business and the products' names, for prompts and news."""
+        """The business and the products' names, for prompts and insights."""
         return WorldContext(
             business=self.business,
             products={
@@ -427,9 +427,9 @@ class World(_Strict):
             },
         )
 
-    def news_wording(self) -> NewsWording:
-        """The causes level-2 news names for this world's disruptions."""
-        return NewsWording(**self.news.model_dump())
+    def insights_wording(self) -> InsightWording:
+        """The causes insights name for this world's disruptions."""
+        return InsightWording(**self.insights.model_dump())
 
 
 # ---------------------------------------------------------------------------
@@ -636,9 +636,9 @@ def build_episode(world: World, task_name: str, seed: Optional[int] = None) -> E
         storage_pools[pool_name] = StoragePoolConfig(capacity=max(capacity_days * pool_demand, 1.0),
                                                      cold_chain=pool.cold_chain)
 
-    # The built-in pharma world keeps the original prompt and news wording (context None),
+    # The built-in pharma world keeps the original prompt and insights wording (context None),
     # so its prompts, and models trained on them, stay valid. Every other world, including
-    # an edited copy of pharma.yaml, gets prompts and news written from its own file.
+    # an edited copy of pharma.yaml, gets prompts and insights written from its own file.
     own_words = world != default_world()
     return EpisodeConfig(
         task_name=task_name,
@@ -647,5 +647,5 @@ def build_episode(world: World, task_name: str, seed: Optional[int] = None) -> E
         initial_inventory=initial_inventory,
         storage_pools=storage_pools,
         context=world.context() if own_words else None,
-        news_wording=world.news_wording() if own_words else None,
+        insights_wording=world.insights_wording() if own_words else None,
     )

@@ -37,7 +37,7 @@ class FakeOllama(BaseHTTPRequestHandler):
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         prompt = request["messages"][-1]["content"]
-        if "EXTRA days" in request["messages"][0]["content"]:   # the news adviser (llm_news)
+        if "EXTRA days" in request["messages"][0]["content"]:   # the insights adviser (llm_insights)
             return self._reply(request, '{"paracetamol": 4, "insulin": 0}')
         start = prompt.index("{", prompt.index("TODAY'S INVENTORY REPORT"))
         report, _ = json.JSONDecoder().raw_decode(prompt[start:])
@@ -83,18 +83,18 @@ def test_full_run_against_a_local_server(fake_server, tmp_path, capsys):
     assert llm["model"] == "pharma-gemma2-2b" and llm["base_model"] == "gemma2:2b"
 
 
-def test_hybrid_news_run(fake_server, tmp_path, capsys):
-    R.main(["--base-url", fake_server, "--tasks", "flu_season", "--episodes", "1", "--agent", "llm_news",
-            "--news", "2", "--show", "0", "--results-dir", str(tmp_path)])
+def test_hybrid_insights_run(fake_server, tmp_path, capsys):
+    R.main(["--base-url", fake_server, "--tasks", "flu_season", "--episodes", "1", "--agent", "llm_insights",
+            "--insights", "--show", "0", "--results-dir", str(tmp_path)])
     out = capsys.readouterr().out
-    assert "reading level-2 news" in out and "baseline_news" in out
+    assert "reading the insights" in out and "baseline_insights" in out
     assert sorted(p.name for p in tmp_path.iterdir()) == [
-        "baseline_news_news2_test_flu_season_1.jsonl", "baseline_test_flu_season_1.jsonl",
-        "llm_news_pharma-gemma2-2b_news2_test_flu_season_1.jsonl", "oracle_test_flu_season_1.jsonl"]
-    record = json.loads((tmp_path / "llm_news_pharma-gemma2-2b_news2_test_flu_season_1.jsonl").read_text())
-    assert record["news"] == 2 and record["parse_failures"] == 0 and record["llm_errors"] == 0
+        "baseline_insights_insights_test_flu_season_1.jsonl", "baseline_test_flu_season_1.jsonl",
+        "llm_insights_pharma-gemma2-2b_insights_test_flu_season_1.jsonl", "oracle_test_flu_season_1.jsonl"]
+    record = json.loads((tmp_path / "llm_insights_pharma-gemma2-2b_insights_test_flu_season_1.jsonl").read_text())
+    assert record["insights"] is True and record["parse_failures"] == 0 and record["llm_errors"] == 0
     with pytest.raises(SystemExit):
-        R.main(["--base-url", fake_server, "--agent", "llm_news"])   # needs --news
+        R.main(["--base-url", fake_server, "--agent", "llm_insights"])   # needs --insights
 
 
 def test_missing_model_gives_setup_instructions(fake_server):
@@ -161,16 +161,16 @@ def test_single_chosen_seed(fake_server, tmp_path, capsys):
     assert json.loads((tmp_path / "oracle_train_flu_season_seed7.jsonl").read_text())["split"] == "train"
 
 
-def test_summarize_run_prints_scores_and_news_days(fake_server, tmp_path, capsys):
+def test_summarize_run_prints_scores_and_insights_days(fake_server, tmp_path, capsys):
     import summarize_run as S
 
-    R.main(["--base-url", fake_server, "--seed", "10000", "--news", "2", "--show", "0",
+    R.main(["--base-url", fake_server, "--seed", "10000", "--insights", "--show", "0",
             "--results-dir", str(tmp_path)])
     capsys.readouterr()
-    S.main([str(tmp_path / "llm_pharma-gemma2-2b_news2_test_flu_season_seed10000.jsonl")])
+    S.main([str(tmp_path / "llm_pharma-gemma2-2b_insights_test_flu_season_seed10000.jsonl")])
     out = capsys.readouterr().out.splitlines()
     assert out[0].startswith("flu_season 10000 score ")
-    assert any(" news " in line for line in out[1:])            # days with news are listed
+    assert any(" insights " in line for line in out[1:])            # days with insights are listed
     assert all(line.startswith("  day ") for line in out[1:])
     with pytest.raises(SystemExit, match="No such file"):
         S.main([str(tmp_path / "missing.jsonl")])

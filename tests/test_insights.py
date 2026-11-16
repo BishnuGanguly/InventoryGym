@@ -1,4 +1,4 @@
-"""Tests for news (news.py), the news-aware agents (agents.py) and their prompt (inference.py)."""
+"""Tests for insights (insights.py), the insights-aware agents (agents.py) and their prompt (inference.py)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ import pytest
 
 import eval as E
 import inference
-from agents import MAX_COVER_DAYS, NewsLLMAgent, NewsRuleAgent, baseline_lead_time, baseline_policy
+from agents import MAX_COVER_DAYS, InsightsLLMAgent, InsightsRuleAgent, baseline_lead_time, baseline_policy
 from models import InventoryAction
-from news import ANNOUNCE_DAYS_AHEAD, add_news, find_events, visible_news
+from insights import ANNOUNCE_DAYS_AHEAD, add_insights, find_events, visible_insights
 from server.inventory_environment import InventoryEnvironment
 from tasks import TASK_REGISTRY, TEST_SEEDS, get_task_config
 
@@ -47,60 +47,58 @@ def test_events_follow_the_task_curves():
 
 
 @pytest.mark.parametrize("task_name", TASKS)
-@pytest.mark.parametrize("level", [1, 2])
-def test_news_is_published_5_to_10_days_ahead(task_name, level):
-    events = get_task_config(task_name, SEED, news=level).news
+def test_insights_are_published_5_to_10_days_ahead(task_name):
+    events = get_task_config(task_name, SEED, insights=True).insights
     assert events
     for e in events:
         ahead = e.start_day - e.announce_day
         assert e.announce_day == 0 or ANNOUNCE_DAYS_AHEAD[0] <= ahead <= ANNOUNCE_DAYS_AHEAD[1]
 
 
-def test_level_1_is_exact_and_level_2_is_varied_but_deterministic():
-    exact = get_task_config("supply_chain_broken", SEED, news=1).news[0]
-    assert "insulin" in exact.message and "day 15" in exact.message and "day 25" in exact.message
-    varied = [e.message for t in TASKS for s in TEST_SEEDS[:5] for e in get_task_config(t, s, news=2).news]
+def test_the_wording_is_varied_but_deterministic():
+    varied = [e.message for t in TASKS for s in TEST_SEEDS[:5] for e in get_task_config(t, s, insights=True).insights]
     assert not any("day 15" in m for m in varied)          # timing is relative, not exact
     assert len({m.split(":")[0].split(" ")[0] for m in varied}) > 2   # several templates
-    assert varied == [e.message for t in TASKS for s in TEST_SEEDS[:5] for e in get_task_config(t, s, news=2).news]
+    assert varied == [e.message for t in TASKS for s in TEST_SEEDS[:5] for e in get_task_config(t, s, insights=True).insights]
 
 
-def test_news_level_0_and_bad_levels():
+def test_insights_are_off_by_default_and_only_on_or_off():
     config = get_task_config("flu_season", SEED)
-    assert config.news == [] and add_news(config, 0, SEED) is config
-    with pytest.raises(ValueError):
-        add_news(config, 3, SEED)
+    assert config.insights == [] and add_insights(config, False, SEED) is config
+    for level in (0, 1, 2, "yes"):                       # the old levels are gone
+        with pytest.raises(ValueError):
+            add_insights(config, level, SEED)
 
 
 @pytest.mark.parametrize("task_name", TASKS)
-def test_news_never_changes_the_world(task_name):
+def test_insights_never_changes_the_world(task_name):
     plain = get_task_config(task_name, SEED)
-    with_news = get_task_config(task_name, SEED, news=2)
-    assert plain.model_dump(exclude={"news"}) == with_news.model_dump(exclude={"news"})
-    # The baseline ignores news, so it scores exactly the same.
+    with_insights = get_task_config(task_name, SEED, insights=True)
+    assert plain.model_dump(exclude={"insights"}) == with_insights.model_dump(exclude={"insights"})
+    # The baseline ignores insights, so it scores exactly the same.
     assert (E.run_episode("baseline", task_name, SEED)["score"]
-            == E.run_episode("baseline", task_name, SEED, news=2)["score"])
+            == E.run_episode("baseline", task_name, SEED, insights=True)["score"])
 
 
-def test_observation_shows_news_from_publication_to_end():
+def test_observation_shows_insights_from_publication_to_end():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="supply_chain_broken", seed=SEED, news=1)
-    event = env._episode_config.news[0]
+    obs = env.reset(task_name="supply_chain_broken", seed=SEED, insights=True)
+    event = env._episode_config.insights[0]
     seen = {}
     while not obs.done:
-        seen[obs.current_date] = list(obs.news)
+        seen[obs.current_date] = list(obs.insights)
         obs = env.step(InventoryAction(message="{}"))
     for day, items in seen.items():
         shown = any(item == f"Day {event.announce_day}: {event.message}" for item in items)
         assert shown == (event.announce_day <= day <= event.end_day)
-    assert visible_news(env._episode_config, 0) == []
+    assert visible_insights(env._episode_config, 0) == []
 
 
-def test_report_includes_news_only_when_there_is_some():
+def test_report_includes_insights_only_when_there_is_some():
     env = InventoryEnvironment()
-    assert "news" not in inference.observation_to_dict(env.reset(task_name="flu_season", seed=SEED))
-    obs = env.reset(task_name="epidemic_two_wave", seed=SEED, news=2)
-    assert inference.observation_to_dict(obs)["news"] == obs.news
+    assert "insights" not in inference.observation_to_dict(env.reset(task_name="flu_season", seed=SEED))
+    obs = env.reset(task_name="epidemic_two_wave", seed=SEED, insights=True)
+    assert inference.observation_to_dict(obs)["insights"] == obs.insights
 
 
 # ---------------------------------------------------------------------------
@@ -122,46 +120,46 @@ def test_extra_days_are_capped_for_storage():
 
 
 @pytest.mark.parametrize("task_name", TASKS)
-def test_news_rule_agent_beats_the_baseline(task_name):
-    baseline = E.run_episode("baseline", task_name, SEED, news=1)["score"]
-    assert E.run_episode("baseline_news", task_name, SEED, news=1)["score"] > baseline
-    # Without news it is the baseline.
-    assert E.run_episode("baseline_news", task_name, SEED)["score"] == E.run_episode("baseline", task_name, SEED)["score"]
+def test_insights_rule_agent_beats_the_baseline(task_name):
+    baseline = E.run_episode("baseline", task_name, SEED, insights=True)["score"]
+    assert E.run_episode("baseline_insights", task_name, SEED, insights=True)["score"] > baseline
+    # Without insights the agent is the baseline.
+    assert E.run_episode("baseline_insights", task_name, SEED)["score"] == E.run_episode("baseline", task_name, SEED)["score"]
 
 
-def test_news_llm_agent_only_calls_the_model_on_news_days(monkeypatch):
+def test_insights_llm_agent_only_calls_the_model_on_insights_days(monkeypatch):
     client, calls = fake_client('{"insulin": 6, "Amlodipine": 2, "HCQ": "lots", "aspirin": 9}')
-    monkeypatch.setattr(E, "make_agent", lambda name, llm=None: NewsLLMAgent("stub", "x", "x", client=client))
-    record = E.run_episode("custom", "supply_chain_broken", SEED, news=2, save_steps=True)
-    news_days = [s["day"] for s in record["steps"] if s["news"]]
-    assert len(calls) == len(news_days) > 0
+    monkeypatch.setattr(E, "make_agent", lambda name, llm=None: InsightsLLMAgent("stub", "x", "x", client=client))
+    record = E.run_episode("custom", "supply_chain_broken", SEED, insights=True, save_steps=True)
+    insights_days = [s["day"] for s in record["steps"] if s["insights"]]
+    assert len(calls) == len(insights_days) > 0
     assert record["parse_failures"] == 0 and record["llm_errors"] == 0
     prompt = calls[0]["messages"][1]["content"]
-    assert f"Today is day {news_days[0]}" in prompt and "PRODUCTS:" in prompt
-    assert calls[0]["messages"][0]["content"] == inference.NEWS_SYSTEM_PROMPT
+    assert f"Today is day {insights_days[0]}" in prompt and "PRODUCTS:" in prompt
+    assert calls[0]["messages"][0]["content"] == inference.INSIGHTS_SYSTEM_PROMPT
 
 
-def test_news_llm_agent_without_news_is_the_baseline():
+def test_insights_llm_agent_without_insights_is_the_baseline():
     client, calls = fake_client()
     env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=SEED)
     for _ in range(4):
         obs = env.step(InventoryAction(message="{}"))
-    agent = NewsLLMAgent("stub", "x", "x", client=client)
+    agent = InsightsLLMAgent("stub", "x", "x", client=client)
     reply, error = agent.act(obs, [])
     assert json.loads(reply) == baseline_policy(obs) and error is None and calls == []
 
 
-def test_news_llm_agent_applies_the_reply_and_survives_failures():
+def test_insights_llm_agent_applies_the_reply_and_survives_failures():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="supply_chain_broken", seed=SEED, news=1)
-    while not obs.news:
+    obs = env.reset(task_name="supply_chain_broken", seed=SEED, insights=True)
+    while not obs.insights:
         obs = env.step(InventoryAction(message=json.dumps(baseline_policy(obs))))
     client, _ = fake_client('Insulin needs more: {"insulin": 5, "paracetamol": 0}')
-    reply, error = NewsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    reply, error = InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
     assert error is None and json.loads(reply) == baseline_policy(obs, extra_days={"insulin": 5})
     client, _ = fake_client(fail=True)
-    reply, error = NewsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    reply, error = InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
     assert "TimeoutError" in error and json.loads(reply) == baseline_policy(obs)
 
 
@@ -173,45 +171,45 @@ def test_parse_extra_days_accepts_aliases_and_skips_junk():
 
 def test_rule_agent_reads_events_from_the_environment():
     env = InventoryEnvironment()
-    env.reset(task_name="flu_season", seed=SEED, news=2)
-    agent = NewsRuleAgent()
+    env.reset(task_name="flu_season", seed=SEED, insights=True)
+    agent = InsightsRuleAgent()
     agent.start_episode(env)
-    assert agent._events == env._episode_config.news
+    assert agent._events == env._episode_config.insights
 
 
-def test_command_line_news_flag(tmp_path):
-    out = tmp_path / "news.jsonl"
-    E.main(["--agent", "baseline_news", "--news", "2", "--episodes", "1", "--tasks", "flu_season",
+def test_command_line_insights_flag(tmp_path):
+    out = tmp_path / "insights.jsonl"
+    E.main(["--agent", "baseline_insights", "--insights", "--episodes", "1", "--tasks", "flu_season",
             "--workers", "1", "--out", str(out)])
-    assert json.loads(out.read_text())["news"] == 2
+    assert json.loads(out.read_text())["insights"] is True
 
 
-def test_news_prompt_has_no_example_answer():
+def test_insights_prompt_has_no_example_answer():
     """Regression: the prompt ended with an all-zero example answer. A model that copies it
     plays exactly like the baseline every day, so every sampled answer gets the same
     reward and GRPO has nothing to learn from."""
     from test_prompt import SKU_WITH_NUMBER
 
-    assert not SKU_WITH_NUMBER.search(inference.NEWS_SYSTEM_PROMPT)
-    assert '{"<product_name>": <extra_days>' in inference.NEWS_SYSTEM_PROMPT
+    assert not SKU_WITH_NUMBER.search(inference.INSIGHTS_SYSTEM_PROMPT)
+    assert '{"<product_name>": <extra_days>' in inference.INSIGHTS_SYSTEM_PROMPT
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], news=2)
-    while not obs.news:
+    obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], insights=True)
+    while not obs.insights:
         obs = env.step(InventoryAction(message="{}"))
-    prompt = inference.build_news_prompt(obs)
+    prompt = inference.build_insights_prompt(obs)
     assert not SKU_WITH_NUMBER.search(prompt[prompt.index("Extra days"):])
 
 
-def test_level2_news_uses_generic_product_names():
+def test_level2_insights_uses_generic_product_names():
     """No drug or brand names: 'amlodipine' for bp_medication made models react to the wrong product."""
-    from news import PRODUCT_NAMES
+    from insights import PRODUCT_NAMES
 
     assert PRODUCT_NAMES["bp_medication"] == "blood-pressure medication"
     assert all("(" not in name for name in PRODUCT_NAMES.values())
     messages = [e.message.lower() for t in TASKS for s in TEST_SEEDS[:20] for scenario in ("fixed", "random")
-                for e in get_task_config(t, s, news=2, scenario=scenario).news]
+                for e in get_task_config(t, s, insights=True, scenario=scenario).insights]
     assert messages and not any(w in m for m in messages for w in ("amlodipine", "hcq", "supplements"))
     # Every product a level-2 item mentions is named exactly as in PRODUCT_NAMES.
     for t in TASKS:
-        for e in get_task_config(t, TEST_SEEDS[0], news=2, scenario="random").news:
+        for e in get_task_config(t, TEST_SEEDS[0], insights=True, scenario="random").insights:
             assert PRODUCT_NAMES[e.sku_id] in e.message.lower()

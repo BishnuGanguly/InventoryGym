@@ -11,9 +11,9 @@ name: pharma
 description: >
   A pharmaceutical warehouse with a refrigerated pool for insulin and an ambient pool
   for everything else, facing supplier delays and epidemic demand waves.
-# The built-in pharma world keeps its original prompt and news wording, which trained
-# models rely on. The words below (business, product names, news causes) are what a
-# changed copy of this file starts from: any other world's prompts and news are written
+# The built-in pharma world keeps its original prompt and insights wording, which trained
+# models rely on. The words below (business, product names, insight causes) are what a
+# changed copy of this file starts from: any other world's prompts and insights are written
 # from these fields.
 business: a pharmaceutical warehouse
 days: 60
@@ -76,7 +76,7 @@ products:
     stockout_penalty: 35
     waste_penalty: 4
 
-news:
+insights:
   delay_causes:
     - a port strike
     - a fire at a manufacturing plant

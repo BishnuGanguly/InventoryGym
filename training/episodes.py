@@ -5,7 +5,7 @@ This plays exactly like eval.run_episode with the `llm` agent in the `adjust` fo
 (the same prompt, the same conversion of the answer into an order), but makes 60
 batched calls instead of 60 calls per episode.
 
-    records = run_llm_episodes(tasks, seeds, generate, news=2, scenario="random")
+    records = run_llm_episodes(tasks, seeds, generate, insights=True, scenario="random")
     # generate(list_of_chat_messages) -> list of answer strings, one per prompt
 
 The records have the fields eval.paired_comparison and eval.summarize read.
@@ -54,7 +54,7 @@ def run_llm_episodes(
     tasks: Sequence[str],
     seeds: Sequence[int],
     generate: Generate,
-    news: int = 2,
+    insights: bool = True,
     scenario: str = "random",
     agent: str = "llm",
     model: str = "",
@@ -66,7 +66,7 @@ def run_llm_episodes(
     for task in tasks:
         for seed in seeds:
             env = InventoryEnvironment()
-            obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
+            obs = env.reset(task_name=task, seed=seed, insights=insights, scenario=scenario)
             runs.append({"task": task, "seed": seed, "env": env, "obs": obs, "history": [], "fill": 0.0,
                          "stockout": 0, "overflow": 0, "wasted": 0.0, "parse_failures": 0, "replies": []})
     while True:
@@ -89,14 +89,14 @@ def run_llm_episodes(
             r["wasted"] += obs.inventory_excess_today
             r["history"].append((day, reply, inference.build_feedback(obs)))
             if save_replies:
-                r["replies"].append({"day": day, "news": list(r["obs"].news), "reply": text})
+                r["replies"].append({"day": day, "insights": list(r["obs"].insights), "reply": text})
             r["obs"] = obs
     records = []
     for r in runs:
         days = len(r["history"])
         record = {
             "agent": agent, "model": model or None, "action_format": "adjust",
-            "task": r["task"], "seed": r["seed"], "split": split, "news": news, "scenario": scenario,
+            "task": r["task"], "seed": r["seed"], "split": split, "insights": insights, "scenario": scenario,
             "score": round(compute_final_score(r["obs"], r["env"]._episode_config), 6),
             "avg_fill": round(r["fill"] / days, 6) if days else 0.0,
             "stockout_sku_days": r["stockout"], "overflow_days": r["overflow"],
@@ -109,14 +109,14 @@ def run_llm_episodes(
     return records
 
 
-def run_rule_episodes(agent: Agent, name: str, tasks: Sequence[str], seeds: Sequence[int], news: int = 2,
+def run_rule_episodes(agent: Agent, name: str, tasks: Sequence[str], seeds: Sequence[int], insights: bool = True,
                       scenario: str = "random", split: str = "test") -> List[Dict[str, Any]]:
     """Score records for a rule-based agent object (one not in eval.make_agent, e.g. FlatExtraAgent)."""
     records = []
     for task in tasks:
         for seed in seeds:
             env = InventoryEnvironment()
-            obs = env.reset(task_name=task, seed=seed, news=news, scenario=scenario)
+            obs = env.reset(task_name=task, seed=seed, insights=insights, scenario=scenario)
             agent.start_episode(env)
             history: History = []
             while not obs.done:
@@ -124,6 +124,6 @@ def run_rule_episodes(agent: Agent, name: str, tasks: Sequence[str], seeds: Sequ
                 reply, _ = agent.act(obs, history)
                 obs = env.step(InventoryAction(message=reply))
                 history.append((day, reply, inference.build_feedback(obs)))
-            records.append({"agent": name, "task": task, "seed": seed, "split": split, "news": news,
+            records.append({"agent": name, "task": task, "seed": seed, "split": split, "insights": insights,
                             "scenario": scenario, "score": round(compute_final_score(obs, env._episode_config), 6)})
     return records

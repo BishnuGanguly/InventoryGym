@@ -99,7 +99,7 @@ def test_failed_call_still_orders_the_default():
     assert "TimeoutError" in error and json.loads(reply) == baseline_policy(obs)
 
 
-def test_news_agent_clipping_is_unchanged():
+def test_insights_agent_clipping_is_unchanged():
     obs, _ = _played(10)
     assert baseline_policy(obs, extra_days={"paracetamol": -3}) == baseline_policy(obs)
 

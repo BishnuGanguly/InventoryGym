@@ -5,7 +5,7 @@ from random import Random
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 from models import EpisodeConfig, InventoryState, SKUEpisodeConfig
-from news import add_news
+from insights import add_insights
 from world import World, WorldError, build_episode, default_world, load_world
 
 
@@ -138,7 +138,7 @@ def _build_episode(
 # "random": per seed, the disrupted SKUs and the disruption days are drawn, and
 #   storage holds RANDOM_STORAGE_DAYS of demand instead of 21. With fixed SKUs and
 #   21 days of storage, stockpiling a task's usual SKUs every day, without reading
-#   the news, earned most of what perfect news reading earns; drawing the SKUs and
+#   the insights, earned most of what perfect reading of the insights earns; drawing the SKUs and
 #   making stockpiling overflow sooner leaves most of that gain to reading.
 # The scenario has its own generator, so a seed's other random values (base demand,
 # lead times, starting stock, daily noise, the size of each disruption) are the
@@ -294,7 +294,7 @@ SEED_SPLITS = {"train": TRAIN_SEEDS, "test": TEST_SEEDS}
 
 
 def get_task_config(
-    task_name: str, seed: Optional[int] = None, news: int = 0, scenario: str = "fixed",
+    task_name: str, seed: Optional[int] = None, insights: bool = False, scenario: str = "fixed",
     world: Union[World, str, Mapping[str, Any], None] = None,
 ) -> EpisodeConfig:
     """
@@ -302,8 +302,8 @@ def get_task_config(
 
     world: a World, a dict, or a built-in world's name (see world.load_world);
     default the built-in pharma world, whose tasks are TASK_REGISTRY's.
-    news: 0 (none, the original tasks), 1 or 2 announces the task's disruptions
-    ahead of time (see news.py). News never changes the episode's world.
+    insights: True announces the task's disruptions ahead of time (see insights.py); False
+    (the default) gives the plain tasks. Insights never change the episode's world.
     scenario: "fixed" (the tasks as the world defines them) or "random" (disrupted
     SKUs and days drawn per seed, less storage; see SCENARIOS). "random" is only
     available for the pharma world for now.
@@ -323,7 +323,7 @@ def get_task_config(
                          "give it `draw` names and day ranges (see world.py), and use scenario='fixed'")
     else:
         config = TASK_REGISTRY[task_name](seed, scenario=scenario)
-    return add_news(config, news, seed)
+    return add_insights(config, insights, seed)
 
 
 # ---------------------------------------------------------------------------

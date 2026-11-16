@@ -21,12 +21,12 @@ TASKS = sorted(TASK_REGISTRY)
 
 @pytest.fixture(scope="module")
 def prompts():
-    return G.news_day_prompts(TASKS, TRAIN_SEEDS[:4])
+    return G.insights_day_prompts(TASKS, TRAIN_SEEDS[:4])
 
 
-def _news_skus(prompt):
+def _insights_skus(prompt):
     env, _, _ = G.build_state(prompt)
-    return sorted({e.sku_id for e in env._episode_config.news if e.announce_day <= prompt.day <= e.end_day})
+    return sorted({e.sku_id for e in env._episode_config.insights if e.announce_day <= prompt.day <= e.end_day})
 
 
 # --- the environment hook ---------------------------------------------------
@@ -46,12 +46,12 @@ def test_resample_future_noise_redraws_from_today_on_only():
 
 # --- prompts --------------------------------------------------------------------
 
-def test_prompts_are_news_days_of_the_random_scenario(prompts):
-    assert prompts and all(p.scenario == "random" and p.news == 2 for p in prompts)
+def test_prompts_are_insights_days_of_the_random_scenario(prompts):
+    assert prompts and all(p.scenario == "random" and p.insights is True for p in prompts)
     for p in prompts[::25]:
         _, obs, _ = G.build_state(p)
-        assert obs.current_date == p.day and obs.news
-    assert G.news_day_prompts(TASKS[:1], TRAIN_SEEDS[:2], news=0) == []
+        assert obs.current_date == p.day and obs.insights
+    assert G.insights_day_prompts(TASKS[:1], TRAIN_SEEDS[:2], insights=False) == []
 
 
 def test_state_is_rebuilt_exactly(prompts):
@@ -71,7 +71,7 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
 
     agent = LLMAgent("stub", "x", "x", client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     env = InventoryEnvironment()
-    obs = env.reset(task_name=p.task, seed=p.seed, news=p.news, scenario=p.scenario)
+    obs = env.reset(task_name=p.task, seed=p.seed, insights=p.insights, scenario=p.scenario)
     history = []
     while obs.current_date <= p.day:
         day = obs.current_date
@@ -84,7 +84,7 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
 
 def test_dataset_rows_carry_the_columns_the_reward_reads(prompts):
     row = G.dataset_rows(prompts[:1])[0]
-    assert set(row) == {"prompt", "task", "seed", "day", "scenario", "news", "states"}
+    assert set(row) == {"prompt", "task", "seed", "day", "scenario", "insights", "states"}
     assert row["states"] == "baseline"
     assert row["prompt"][0]["role"] == "system"
 
@@ -116,7 +116,7 @@ def test_answering_zero_scores_exactly_zero(prompts):
 
 def test_reward_is_the_gain_over_answering_zero_per_day_in_points(prompts):
     p = next(q for q in prompts if q.task == "supply_chain_broken")
-    sku = _news_skus(p)[0]
+    sku = _insights_skus(p)[0]
     env, obs, _ = G.build_state(p)
     expected = (G.score(env, obs, p, {sku: 7.0}) - G.score(env, obs, p, {})) * 100 / G.HORIZON
     assert G.GRPOReward().score_answer(p, json.dumps({sku: 7}))["reward"] == pytest.approx(expected)
@@ -125,7 +125,7 @@ def test_reward_is_the_gain_over_answering_zero_per_day_in_points(prompts):
 def test_rewards_are_deterministic_and_answers_share_futures(prompts):
     """Two separate reward objects, two orders of evaluation: the same answer, the same reward."""
     sample = prompts[::30]
-    answers = [json.dumps({s: v for s in _news_skus(p)}) for p in sample for v in (2, 7)]
+    answers = [json.dumps({s: v for s in _insights_skus(p)}) for p in sample for v in (2, 7)]
     targets = [p for p in sample for _ in (2, 7)]
     a = [G.GRPOReward().score_answer(p, t)["reward"] for p, t in zip(targets, answers)]
     r = G.GRPOReward()
@@ -136,7 +136,7 @@ def test_rewards_are_deterministic_and_answers_share_futures(prompts):
 def test_score_does_not_depend_on_the_episodes_real_future(prompts):
     p = prompts[len(prompts) // 2]
     env, obs, _ = G.build_state(p)
-    sku = _news_skus(p)[0]
+    sku = _insights_skus(p)[0]
     before = G.score(env, obs, p, {sku: 7.0})
     env.resample_future_noise(Random(123))      # change the real episode's future
     assert G.score(env, obs, p, {sku: 7.0}) == before
@@ -146,7 +146,7 @@ def test_scoring_leaves_the_state_untouched(prompts):
     p = prompts[5]
     env, obs, _ = G.build_state(p)
     snapshot = copy.deepcopy((env._inventory_state, env._open_orders, env._demand_z))
-    G.score(env, obs, p, {_news_skus(p)[0]: 10.0})
+    G.score(env, obs, p, {_insights_skus(p)[0]: 10.0})
     assert (env._inventory_state, env._open_orders, env._demand_z) == snapshot
 
 
@@ -161,9 +161,9 @@ def test_answer_applies_today_only(prompts, monkeypatch):
 
 
 def test_the_reward_separates_answers(prompts):
-    """Across news days some answers beat 0 and some lose to it: there is something to learn."""
+    """Across days with insights some answers beat 0 and some lose to it: there is something to learn."""
     r = G.GRPOReward()
-    rewards = [r.score_answer(p, json.dumps({s: v for s in _news_skus(p)}))["reward"]
+    rewards = [r.score_answer(p, json.dumps({s: v for s in _insights_skus(p)}))["reward"]
                for p in prompts[::15] for v in (2, 10)]
     assert max(rewards) > 0.3 and min(rewards) < -0.3
 
@@ -172,10 +172,10 @@ def test_trl_style_call_with_chat_completions(prompts):
     p = prompts[0]
     completions = [[{"role": "assistant", "content": "{}"}], [{"role": "assistant", "content": "no idea"}], "{}"]
     out = G.GRPOReward()(completions, task=[p.task] * 3, seed=[p.seed] * 3, day=[p.day] * 3,
-                         scenario=[p.scenario] * 3, news=[p.news] * 3, prompts=None)
+                         scenario=[p.scenario] * 3, insights=[p.insights] * 3, prompts=None)
     assert out == [0.0, G.PENALTY_NO_JSON, 0.0]
 
 
 def test_train_and_test_seeds_never_mix():
-    assert all(p.seed in TRAIN_SEEDS for p in G.news_day_prompts(TASKS[:1], TRAIN_SEEDS[:2]))
+    assert all(p.seed in TRAIN_SEEDS for p in G.insights_day_prompts(TASKS[:1], TRAIN_SEEDS[:2]))
     assert not set(TRAIN_SEEDS[:2]) & set(TEST_SEEDS)

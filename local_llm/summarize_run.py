@@ -1,16 +1,16 @@
 """
 Print a short summary of an LLM results file written by run_local_llm.py or eval.py
 --save-steps: each episode's score, then only the days the model asked for something
-(non-zero values) or had news to read. Small enough to paste or read at a glance.
+(non-zero values) or had insights to read. Small enough to paste or read at a glance.
 
-    uv run python local_llm/summarize_run.py results/llm_pharma-phi4-mini_news2_test_all_3.jsonl
+    uv run python local_llm/summarize_run.py results/llm_pharma-phi4-mini_insights_test_all_3.jsonl
     uv run python local_llm/summarize_run.py results/llm_*.jsonl       # several files
 
 Example output:
 
     flu_season 10000 score 0.9157 stockout_sku_days 26 wasted 0
-      day  6 news {}
-      day 25 news {'paracetamol': 7}
+      day  6 insights {}
+      day 25 insights {'paracetamol': 7}
 """
 
 from __future__ import annotations
@@ -39,8 +39,8 @@ def summarize(path: Path) -> Iterator[str]:
             continue
         for step in steps:
             extra = {k: v for k, v in parse_json_object(step.get("reply") or "").items() if v}
-            if extra or step.get("news"):
-                yield f"  day {step['day']:2d} {'news' if step.get('news') else '    '} {extra}"
+            if extra or step.get("insights"):
+                yield f"  day {step['day']:2d} {'insights' if step.get('insights') else '    '} {extra}"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:

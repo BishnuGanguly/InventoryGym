@@ -109,7 +109,7 @@ _PROMPT_INTRO = textwrap.dedent("""
                                      Higher = protect it first.
       waste_penalty                — cost of this SKU's deliveries overflowing storage.
       cold_storage_required        — true means this SKU uses the cold storage pool.
-    When there is news, the report also has a "news" list: announced disruptions (supplier
+    When there are insights, the report also has an "insights" list: announced disruptions (supplier
     delays, demand surges), each starting with the day it was published.
 """).strip()
 
@@ -204,9 +204,9 @@ _ADJUST_RULES = textwrap.dedent("""
     4. Recent shortages: if a SKU appears in short_skus in the recent results, add a few days.
     5. Critical SKUs: a shortage of a SKU with a high stockout_penalty costs the most, so
        when one of the reasons above applies to it, lean towards more days.
-    6. News: for an announced supplier delay, add about (slowdown factor - 1) x avg_lead_time
-       days from the day the news appears until the delay is over; for an announced demand
-       surge, add a few days until its peak. Products the news does not mention: no change.
+    6. Insights: for an announced supplier delay, add about (slowdown factor - 1) x avg_lead_time
+       days from the day the insights appear until the delay is over; for an announced demand
+       surge, add a few days until its peak. Products the insights do not mention: no change.
     7. Storage: each pool holds only cold_days / ambient_days days of its SKUs' demand,
        shared by all its SKUs. Large adjustments for many SKUs at once overflow storage, and deliveries that do
        not fit are wasted; wasted insulin costs the most. If cold_ratio or ambient_ratio is
@@ -384,8 +384,8 @@ def observation_to_dict(obs: InventoryState, include_cover: bool = True) -> Dict
     if not include_cover:
         for sku in report["inventory"].values():
             del sku["days_of_cover"]
-    if obs.news:
-        report["news"] = list(obs.news)
+    if obs.insights:
+        report["insights"] = list(obs.insights)
     return report
 
 
@@ -552,15 +552,15 @@ def days_to_units(obs: InventoryState, days_by_sku: Dict[str, Any]) -> Dict[str,
     return orders
 
 # ---------------------------------------------------------------------------
-# News adviser (hybrid agent): the LLM reads the news, the baseline does the maths
+# Insights adviser (hybrid agent): the LLM reads the insights, the baseline does the maths
 # ---------------------------------------------------------------------------
 
-NEWS_SYSTEM_PROMPT = textwrap.dedent("""
-    You advise the procurement team of a pharmaceutical warehouse about disruptions announced in the news.
+INSIGHTS_SYSTEM_PROMPT = textwrap.dedent("""
+    You advise the procurement team of a pharmaceutical warehouse about disruptions announced in the insights.
 
     An automatic ordering rule already keeps, for every product, enough stock for its lead time plus
     3 safety days of recent demand. It only reacts after a problem shows up in deliveries or sales,
-    which is too late. Your job is to read today's news and decide how many EXTRA days of stock to keep
+    which is too late. Your job is to read today's insights and decide how many EXTRA days of stock to keep
     for each product, so the warehouse is ready before the disruption hits.
 
     PRODUCTS (use these exact names in your answer)
@@ -572,17 +572,17 @@ NEWS_SYSTEM_PROMPT = textwrap.dedent("""
 
     GUIDELINES
     1. Supplier delay, deliveries about X times slower: extra days = about (X - 1) x avg_lead_time.
-       Keep it from the day the news appears until the delay is over.
+       Keep it from the day the insights appear until the delay is over.
     2. Demand surge, demand rising to about X times normal: extra days = about (avg_lead_time + 3) x (X - 1) / 2
-       from the day the news appears until the peak; 0 after the peak (recent sales already show the
+       from the day the insights appear until the peak; 0 after the peak (recent sales already show the
        higher demand, and stock bought for the peak would overflow storage as demand falls).
     3. If both happen to one product, add the two.
-    4. Products the news does not affect, and events that are over: 0.
+    4. Products the insights do not affect, and events that are over: 0.
     5. Shortages are weighted by stockout_penalty in the score: for a product with a high
        stockout_penalty, lean towards the upper end of these estimates.
     6. Storage is limited, so never more than 15 extra days.
 
-    Work out each product's extra days from today's news and that product's numbers in the report.
+    Work out each product's extra days from today's insights and that product's numbers in the report.
     Respond with one JSON object on one line giving extra days for EVERY product, using the exact
     product names above:
     {"<product_name>": <extra_days>, "<product_name>": <extra_days>, ...}
@@ -700,11 +700,11 @@ def system_prompt(action: str = "units", obs: Optional[InventoryState] = None) -
     return _intro(obs) + "\n\n" + rules
 
 
-def news_system_prompt(obs: Optional[InventoryState] = None) -> str:
-    """NEWS_SYSTEM_PROMPT, about the episode's own business and products when it has its own wording."""
+def insights_system_prompt(obs: Optional[InventoryState] = None) -> str:
+    """INSIGHTS_SYSTEM_PROMPT, about the episode's own business and products when it has its own wording."""
     if not has_own_words(obs):
-        return NEWS_SYSTEM_PROMPT
-    text = _swap(NEWS_SYSTEM_PROMPT, "the procurement team of a pharmaceutical warehouse",
+        return INSIGHTS_SYSTEM_PROMPT
+    text = _swap(INSIGHTS_SYSTEM_PROMPT, "the procurement team of a pharmaceutical warehouse",
                  f"the procurement team of {obs.context.business}")
     start = text.index("  insulin ")
     end = text.index("\n\nGUIDELINES")
@@ -722,10 +722,10 @@ def sku_aliases(obs: InventoryState) -> Dict[str, str]:
     return aliases
 
 
-def build_news_prompt(obs: InventoryState) -> str:
-    """Today's news and, per product, the numbers the guidelines use."""
-    lines = [f"Today is day {obs.current_date}.", "", "NEWS (each item starts with the day it was published):"]
-    lines += [f"- {item}" for item in obs.news] or ["- none"]
+def build_insights_prompt(obs: InventoryState) -> str:
+    """Today's insights and, per product, the numbers the guidelines use."""
+    lines = [f"Today is day {obs.current_date}.", "", "INSIGHTS (each item starts with the day it was published):"]
+    lines += [f"- {item}" for item in obs.insights] or ["- none"]
     lines += ["", "PRODUCTS:"]
     for sku_id, sku in obs.skus.items():
         recent = max(sku.avg_demand_last_5_days, sku.avg_demand_per_day)

@@ -8,11 +8,11 @@ port: 8000
 
 # The rest describes the environment for people; OpenEnv ignores it.
 title: InventoryGym
-version: "1.0.0"
+version: "2.0.0"
 author: BishnuGanguly
 description: >
   An inventory-management environment for LLM agents. Every day the agent
-  reads a stock report, and optionally news about coming supplier delays and
+  reads a stock report, and optionally insights about coming supplier delays and
   demand surges, and decides how much of each product to order. The products,
   storage areas and disruptions come from a world file (docs/world-files.md):
   a pharmaceutical warehouse is built in, a grocery store is an example, and
@@ -26,7 +26,7 @@ observation_space:
   description: >
     An InventoryState JSON object (docs/observation-and-answers.md).
     Global: current_date, storage pools with total and free capacity,
-    expected_inbound_orders, news visible today, waste today and cumulative,
+    expected_inbound_orders, insights visible today, waste today and cumulative,
     done, reward.
     Per product: inventory_on_hand, average demand (overall and last 5 days),
     average lead time and the last 3 observed, days of cover, storage pool,
@@ -49,7 +49,7 @@ reset_parameters:
   seed: "Fixes the episode (task generation and demand / lead-time noise)."
   task_name: "A task of the world (default world: the tasks listed below)."
   world: "A built-in world name or a world as JSON; never a file path."
-  news: "0 no news (default), 1 exact wording, 2 natural wording."
+  insights: "0 no insights (default), 1 exact wording, 2 natural wording."
   scenario: "fixed (default) or random; built-in pharma world only."
   episode_config: "A full EpisodeConfig (JSON); overrides task_name."
 

@@ -119,7 +119,7 @@ def _range(low: float, high: float) -> List[Any]:
 
 def _tasks(days: int, scenarios: Sequence[str], severity: str) -> Dict[str, Any]:
     delay_size, surge_size = SEVERITIES[severity]
-    # Start days leave room for the news to come first and for the whole event to end inside the episode.
+    # Start days leave room for the insights to come first and for the whole event to end inside the episode.
     delay_start = [max(5, days // 6), days - 14]
     peak = [max(10, days // 3), days - 12]
 

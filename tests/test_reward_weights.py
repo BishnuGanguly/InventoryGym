@@ -61,7 +61,7 @@ def test_every_prompt_says_shortages_are_weighted_by_stockout_penalty():
     for prompt in (inference.SYSTEM_PROMPT, inference.SYSTEM_PROMPT_DAYS, inference.SYSTEM_PROMPT_ADJUST):
         assert "Shortages are weighted by stockout_penalty in your score" in prompt
         assert not SKU_WITH_NUMBER.search(prompt)
-    assert "weighted by stockout_penalty" in inference.NEWS_SYSTEM_PROMPT
+    assert "weighted by stockout_penalty" in inference.INSIGHTS_SYSTEM_PROMPT
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], news=1)
-    assert '"stockout_penalty": 100.0' in inference.build_news_prompt(obs)
+    obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], insights=True)
+    assert '"stockout_penalty": 100.0' in inference.build_insights_prompt(obs)

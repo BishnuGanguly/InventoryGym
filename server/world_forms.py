@@ -9,7 +9,7 @@ Amounts and days are written as text: "100" for a number, "80-120" for a range d
 per seed. A product cell in the events table is a product id, "any" (drawn per seed),
 "a|b|c" (drawn from these) or the name of a draw defined in the file.
 
-Whatever the tables cannot show stays as it is in the file: noise, news causes,
+Whatever the tables cannot show stays as it is in the file: noise, insight causes,
 product descriptions and aliases, a task's own storage sizes, and draws shared by
 several events. No Gradio here, so everything is testable on its own.
 """

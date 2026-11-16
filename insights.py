@@ -1,21 +1,17 @@
 """
-News: disruptions announced to the agent a few days before they start.
+Insights: disruptions announced to the agent a few days before they start.
 
 Every built-in task already contains its disruptions, as per-SKU demand and lead-time
-curves (tasks.py). This module reads those curves, turns each disruption into a
-NewsEvent, and writes the text the agent will read. The world itself is unchanged: news
-only tells the agent, ahead of time, what the curves will do.
+curves (tasks.py). This module reads those curves, turns each disruption into an
+InsightEvent, and writes the text the agent will read. The world itself is unchanged: insights
+only tell the agent, ahead of time, what the curves will do.
 
-News levels
------------
-    0  no news: the original environment.
-    1  one fixed template with exact days and multipliers (easy; a parser could read it).
-    2  varied wording with approximate timing and severity, given relative to the day
-       the news is published (needs reading comprehension).
+Insights are on or off for an episode. The wording varies, with approximate timing and
+severity given relative to the day an insight is published, so it has to be read.
 
 Each event is published a random 5-10 days before it starts (never before day 0).
-All of the news randomness comes from its own generator seeded from the task and seed,
-so adding news never changes an episode's demand, lead times or noise.
+All of the randomness of the insights comes from its own generator seeded from the task and seed,
+so adding insights never changes an episode's demand, lead times or noise.
 """
 
 from __future__ import annotations
@@ -23,9 +19,8 @@ from __future__ import annotations
 from random import Random
 from typing import Dict, List, Optional, Tuple
 
-from models import EpisodeConfig, NewsEvent
+from models import EpisodeConfig, InsightEvent
 
-NEWS_LEVELS = (0, 1, 2)
 # Days between publication and the start of the event, drawn per event.
 ANNOUNCE_DAYS_AHEAD = (5, 10)
 # A demand surge is the part of the demand curve at or above this multiple of normal.
@@ -33,7 +28,7 @@ SURGE_THRESHOLD = 1.5
 # A lead-time curve above this counts as a supplier delay.
 DELAY_THRESHOLD = 1.0001
 
-# How each SKU is named in level-2 news: a plain generic name that matches its sku_id.
+# How each SKU is named in insights: a plain generic name that matches its sku_id.
 # Brand or drug names (e.g. amlodipine for bp_medication) would add a translation task
 # unrelated to stock planning, and a model that misses it reacts to the wrong product.
 PRODUCT_NAMES: Dict[str, str] = {
@@ -81,7 +76,7 @@ def _runs(values: List[float], above: float) -> List[Tuple[int, int]]:
 
 def find_events(config: EpisodeConfig) -> List[Dict]:
     """
-    The disruptions in an episode's curves, as dicts of NewsEvent fields (no text yet),
+    The disruptions in an episode's curves, as dicts of InsightEvent fields (no text yet),
     in the order they start: a supplier delay for every run of raised lead times, a
     demand surge for every run of demand at or above SURGE_THRESHOLD x normal.
     """
@@ -101,16 +96,6 @@ def find_events(config: EpisodeConfig) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # Text
 # ---------------------------------------------------------------------------
-
-def exact_message(event: Dict) -> str:
-    """Level 1: one fixed template with the exact days and multiplier."""
-    sku, start, end, m = event["sku_id"], event["start_day"], event["end_day"], event["multiplier"]
-    if event["kind"] == "supplier_delay":
-        return (f"SUPPLIER DELAY - {sku}: orders placed from day {start} to day {end} "
-                f"will take about {m:.1f}x the normal lead time.")
-    return (f"DEMAND SURGE - {sku}: demand will be at least {SURGE_THRESHOLD:.1f}x normal from day {start} "
-            f"to day {end}, peaking at about {m:.1f}x normal around day {event['peak_day']}.")
-
 
 def _in_days(days: int) -> str:
     """When something starts, as a phrase that reads after "starting" or "expected ..."."""
@@ -151,15 +136,15 @@ def _surge_size(m: float) -> str:
 
 def varied_message(event: Dict, rng: Random, config: Optional[EpisodeConfig] = None) -> str:
     """
-    Level 2: one of several wordings, with timing relative to the publication day and
+    One of several wordings, with timing relative to the publication day and
     approximate (+-1 day on the start, +-2 on the length and peak) and severity in words
     or a rounded number.
 
     The product's name and the cause come from the episode's own wording (config.context,
-    config.news_wording) when it has one; without it (the built-in pharma world) the
+    config.insights_wording) when it has one; without it (the built-in pharma world) the
     original pharma wording is used. Both draw the same random numbers in the same order.
     """
-    own_words = config is not None and config.context is not None and config.news_wording is not None
+    own_words = config is not None and config.context is not None and config.insights_wording is not None
     if own_words:
         info = config.context.products.get(event["sku_id"])
         product = info.name if info else event["sku_id"]
@@ -172,7 +157,7 @@ def varied_message(event: Dict, rng: Random, config: Optional[EpisodeConfig] = N
 
     if event["kind"] == "supplier_delay":
         if own_words:
-            wording, sku = config.news_wording, config.skus.get(event["sku_id"])
+            wording, sku = config.insights_wording, config.skus.get(event["sku_id"])
             cold = bool(sku and sku.cold_storage_required and wording.cold_chain_delay_causes)
             causes = wording.cold_chain_delay_causes if cold else wording.delay_causes
         else:
@@ -192,7 +177,7 @@ def varied_message(event: Dict, rng: Random, config: Optional[EpisodeConfig] = N
     peak_in = max(1, event["peak_day"] - event["announce_day"] + rng.randint(-2, 2))
     surge = _surge_size(m)
     if own_words:
-        wording = config.news_wording
+        wording = config.insights_wording
         cause = wording.surge_causes.get(event["sku_id"], wording.default_surge_cause)
         templates = (
             f"Forecast update: because of {cause}, demand for {product} is expected to {surge} "
@@ -216,29 +201,31 @@ def varied_message(event: Dict, rng: Random, config: Optional[EpisodeConfig] = N
 
 
 # ---------------------------------------------------------------------------
-# Adding news to an episode
+# Adding insights to an episode
 # ---------------------------------------------------------------------------
 
-def add_news(config: EpisodeConfig, level: int, seed: Optional[int]) -> EpisodeConfig:
+def add_insights(config: EpisodeConfig, insights: bool, seed: Optional[int]) -> EpisodeConfig:
     """
-    Return `config` with its disruptions announced as news at the given level.
-    Level 0 returns it unchanged. The episode's world (curves, noise) is never altered.
+    Return `config` with its disruptions announced as insights; unchanged when `insights`
+    is off. The episode's world (curves, noise) is never altered.
     """
-    if level not in NEWS_LEVELS:
-        raise ValueError(f"news level must be one of {NEWS_LEVELS}, not {level!r}")
-    if level == 0:
+    if not isinstance(insights, bool):
+        raise ValueError(f"insights must be True or False, not {insights!r}")
+    if not insights:
         return config
+    # The generator's key predates the name "insights". It stays as it is so that every
+    # seed keeps the announcement days and wording it always had.
     rng = Random(f"news|{config.task_name}|{seed}")
     events = []
     for event in find_events(config):
         event["announce_day"] = max(0, event["start_day"] - rng.randint(*ANNOUNCE_DAYS_AHEAD))
-        event["message"] = exact_message(event) if level == 1 else varied_message(event, rng, config)
-        events.append(NewsEvent(**event))
-    return config.model_copy(update={"news": events})
+        event["message"] = varied_message(event, rng, config)
+        events.append(InsightEvent(**event))
+    return config.model_copy(update={"insights": events})
 
 
-def visible_news(config: EpisodeConfig, day: int) -> List[str]:
-    """The news the agent sees on `day`: published already, event not over yet; oldest first."""
+def visible_insights(config: EpisodeConfig, day: int) -> List[str]:
+    """The insights the agent sees on `day`: published already, event not over yet; oldest first."""
     return [f"Day {e.announce_day}: {e.message}"
-            for e in sorted(config.news, key=lambda e: e.announce_day)
+            for e in sorted(config.insights, key=lambda e: e.announce_day)
             if e.announce_day <= day <= e.end_day]

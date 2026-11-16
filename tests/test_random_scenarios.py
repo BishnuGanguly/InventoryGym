@@ -7,8 +7,9 @@ import pytest
 import eval as E
 import inference
 from models import InventoryAction
-from news import find_events
+from insights import find_events
 from server.inventory_environment import InventoryEnvironment
+from insights import PRODUCT_NAMES
 from tasks import (RANDOM_STORAGE_DAYS, SKU_IDS, TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS,
                    get_task_config)
 
@@ -73,11 +74,11 @@ def test_random_days_and_skus_stay_in_their_ranges():
         assert 13 <= waves[0]["peak_day"] <= 23 and 26 <= waves[1]["peak_day"] - waves[0]["peak_day"] <= 32
 
 
-def test_news_follows_the_random_skus_and_days():
-    cfg = get_task_config("supply_chain_broken", TEST_SEEDS[0], news=1, scenario="random")
-    for event in cfg.news:
+def test_insights_follows_the_random_skus_and_days():
+    cfg = get_task_config("supply_chain_broken", TEST_SEEDS[0], insights=True, scenario="random")
+    for event in cfg.insights:
         curve = cfg.skus[event.sku_id].lead_time_curve
-        assert f"{event.sku_id}: orders placed from day {event.start_day} to day {event.end_day}" in event.message
+        assert PRODUCT_NAMES[event.sku_id] in event.message.lower()        # the insight names the drawn product
         assert curve[event.start_day] > 1 and curve[event.start_day - 1] == 1
 
 

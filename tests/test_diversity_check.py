@@ -77,7 +77,7 @@ def test_picks_days_where_the_answer_matters_across_tasks():
     for p in prompts:
         refs = D.reference_rewards(reward, p)
         assert max(refs.values()) - min(refs.values()) >= D.MIN_SPREAD
-        assert p.seed in TRAIN_SEEDS and p.scenario == "random" and p.news == 2
+        assert p.seed in TRAIN_SEEDS and p.scenario == "random" and p.insights is True
 
 
 def test_identical_answers_are_reported_as_no_variety(run):

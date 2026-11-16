@@ -50,7 +50,7 @@ class NothingAgent(Agent):
         return "{}", None
 
 
-# Extra safety days (from news) are capped so that lead time + safety + extra stays within
+# Extra safety days (from insights) are capped so that lead time + safety + extra stays within
 # this many days of demand: each storage pool holds about 21 days of its SKUs' base demand.
 MAX_COVER_DAYS = 18.0
 MAX_EXTRA_DAYS = 15.0
@@ -72,7 +72,7 @@ def baseline_policy(
     stock plus inbound to cover the (most pessimistic) lead time plus a few
     safety days of recent demand.
 
-    extra_days adds safety days per SKU (e.g. chosen from the news), clipped to
+    extra_days adds safety days per SKU (e.g. chosen from the insights), clipped to
     [min_extra, MAX_EXTRA_DAYS] and so that the total cover stays within MAX_COVER_DAYS.
     min_extra below 0 lets an agent keep less than the default (never below the lead time).
     """
@@ -101,7 +101,7 @@ class BaselineAgent(Agent):
 
 
 # ---------------------------------------------------------------------------
-# News: the baseline plus extra safety days for announced disruptions
+# Insights: the baseline plus extra safety days for announced disruptions
 # ---------------------------------------------------------------------------
 
 def _surge_profile(event: Any, day: int) -> float:
@@ -120,9 +120,9 @@ def _surge_profile(event: Any, day: int) -> float:
     return 1.0
 
 
-def news_extra_days(obs: InventoryState, events: List[Any], safety_days: float = 3.0) -> Dict[str, float]:
+def insights_extra_days(obs: InventoryState, events: List[Any], safety_days: float = 3.0) -> Dict[str, float]:
     """
-    Extra safety days per SKU implied by the news events published so far (announce_day
+    Extra safety days per SKU implied by the insight events published so far (announce_day
     <= today <= end_day), worked out from the events' exact fields:
 
     supplier_delay (lead times x m): cover the slower lead time, m x avg_lead_time,
@@ -149,10 +149,10 @@ def news_extra_days(obs: InventoryState, events: List[Any], safety_days: float =
     return extra
 
 
-class NewsRuleAgent(Agent):
+class InsightsRuleAgent(Agent):
     """
-    The baseline plus news_extra_days() from the exact event behind each published news
-    item: what perfect understanding of the news is worth to the baseline. It reads the
+    The baseline plus insights_extra_days() from the exact event behind each published insights
+    item: what perfect understanding of the insights is worth to the baseline. It reads the
     structured events (not the text), so it is a reference, like the oracle, and the
     teacher an LLM reading the text can learn from.
     """
@@ -161,27 +161,27 @@ class NewsRuleAgent(Agent):
         self._events: List[Any] = []
 
     def start_episode(self, env: Any) -> None:
-        self._events = list(env._episode_config.news)
+        self._events = list(env._episode_config.insights)
 
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
-        return json.dumps(baseline_policy(obs, extra_days=news_extra_days(obs, self._events))), None
+        return json.dumps(baseline_policy(obs, extra_days=insights_extra_days(obs, self._events))), None
 
 
-# How far ahead news_plan_orders looks for the earliest arrival of a later order. Longer
+# How far ahead insights_plan_orders looks for the earliest arrival of a later order. Longer
 # than any lead time a delay can produce (the longest normal lead time x the largest multiplier).
 PLAN_LOOKAHEAD_DAYS = 60
 
 
-def news_plan_targets(
+def insights_plan_targets(
     obs: InventoryState,
     events: List[Any],
     normal_lead_time: Dict[str, float],
     safety_days: float = 3.0,
 ) -> Dict[str, float]:
     """
-    Target stock position (units on hand plus inbound) for every SKU with a news event
+    Target stock position (units on hand plus inbound) for every SKU with an insight event
     published so far (announce_day <= today), from an inventory plan that uses the
-    events' fields and the observation only. SKUs without news are not in the result.
+    events' fields and the observation only. SKUs without insights are not in the result.
 
     The plan replaces the baseline's two estimates, which only react after a disruption
     shows:
@@ -200,11 +200,11 @@ def news_plan_targets(
     target = forecast demand over the cover period + safety_days, capped at the SKU's
     share of its storage pool (by normal demand) plus what is consumed while today's
     order travels, so the plan does not order what storage cannot hold.
-    Without news the cover period is the lead time, so the target is the baseline's.
+    Without insights the cover period is the lead time, so the target is the baseline's.
     """
     today = obs.current_date
     published = [e for e in events if e.announce_day <= today and e.sku_id in obs.skus]
-    with_news = {e.sku_id for e in published}
+    with_insights = {e.sku_id for e in published}
 
     def multiple(sku_id: str, day: int) -> float:
         """Demand on `day` as a multiple of normal, from the published surges."""
@@ -225,7 +225,7 @@ def news_plan_targets(
     normal = {sku_id: normal_demand(sku_id) for sku_id in obs.skus}
 
     targets: Dict[str, float] = {}
-    for sku_id in sorted(with_news, key=list(obs.skus).index):
+    for sku_id in sorted(with_insights, key=list(obs.skus).index):
         sku = obs.skus[sku_id]
         demand = normal[sku_id]
         if demand <= 0:
@@ -252,17 +252,17 @@ def news_plan_targets(
     return targets
 
 
-def news_plan_orders(
+def insights_plan_orders(
     obs: InventoryState,
     events: List[Any],
     normal_lead_time: Dict[str, float],
     safety_days: float = 3.0,
 ) -> Dict[str, float]:
     """
-    Orders of the news plan: each SKU with published news is ordered up to its
-    news_plan_targets() target, and every other SKU exactly as baseline_policy orders it.
+    Orders of the insights plan: each SKU with published insights are ordered up to its
+    insights_plan_targets() target, and every other SKU exactly as baseline_policy orders it.
     """
-    targets = news_plan_targets(obs, events, normal_lead_time, safety_days)
+    targets = insights_plan_targets(obs, events, normal_lead_time, safety_days)
     orders = {k: q for k, q in baseline_policy(obs, safety_days=safety_days).items() if k not in targets}
     inbound: Dict[str, float] = {}
     for sku_id, qty, _ in obs.expected_inbound_orders:
@@ -274,27 +274,27 @@ def news_plan_orders(
     return orders
 
 
-def news_plan_adjust_days(
+def insights_plan_adjust_days(
     obs: InventoryState,
     events: List[Any],
     normal_lead_time: Dict[str, float],
     safety_days: float = 3.0,
 ) -> Dict[str, int]:
     """
-    The news plan as an answer in the `adjust` format: for every SKU, the whole number
+    The insights plan as an answer in the `adjust` format: for every SKU, the whole number
     of extra days (within inference.ADJUST_DAYS_RANGE) that brings the baseline's
     order-up-to level closest to the plan's target. The baseline orders up to
     recent demand x (lead time + safety_days + extra), so
 
         extra = target / recent demand - lead time - safety_days
 
-    SKUs without published news, and SKUs with no demand seen yet, get 0. Where the plan
+    SKUs without published insights, and SKUs with no demand seen yet, get 0. Where the plan
     wants less than the baseline (demand falling after a peak) the answer is 0, the
     lowest the format allows.
     """
     low, high = inference.ADJUST_DAYS_RANGE
     answer = {sku_id: 0 for sku_id in obs.skus}
-    for sku_id, target in news_plan_targets(obs, events, normal_lead_time, safety_days).items():
+    for sku_id, target in insights_plan_targets(obs, events, normal_lead_time, safety_days).items():
         sku = obs.skus[sku_id]
         demand = max(sku.avg_demand_last_5_days, sku.avg_demand_per_day)
         if demand <= 0:
@@ -304,12 +304,12 @@ def news_plan_adjust_days(
     return answer
 
 
-class NewsPlanAgent(Agent):
+class InsightsPlanAgent(Agent):
     """
-    news_plan_orders() on the exact event behind each published news item: an inventory
+    insights_plan_orders() on the exact event behind each published insight: an inventory
     plan (cover period, demand forecast, storage cap) instead of the baseline plus extra
-    days. Like NewsRuleAgent it reads the structured events, not the text, so it is a
-    reference for what the news is worth, and it earns clearly more of it. Without news
+    days. Like InsightsRuleAgent it reads the structured events, not the text, so it is a
+    reference for what the insights are worth, and it earns clearly more of it. Without insights
     it plays exactly like the baseline.
     """
 
@@ -318,7 +318,7 @@ class NewsPlanAgent(Agent):
         self._normal_lead_time: Dict[str, float] = {}
 
     def start_episode(self, env: Any) -> None:
-        self._events = list(env._episode_config.news)
+        self._events = list(env._episode_config.insights)
         self._normal_lead_time = {}
 
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
@@ -326,18 +326,18 @@ class NewsPlanAgent(Agent):
         # time; later it mixes in delayed deliveries, so keep the first one seen.
         for sku_id, sku in obs.skus.items():
             self._normal_lead_time.setdefault(sku_id, sku.avg_lead_time)
-        return json.dumps(news_plan_orders(obs, self._events, self._normal_lead_time)), None
+        return json.dumps(insights_plan_orders(obs, self._events, self._normal_lead_time)), None
 
 
-class NewsLLMAgent(Agent):
+class InsightsLLMAgent(Agent):
     """
-    The hybrid: the baseline does the arithmetic, and an LLM reads the news text and
-    answers only with extra safety days per SKU (inference.NEWS_SYSTEM_PROMPT). On days
-    with no news the model is not called and the agent plays exactly like the baseline,
-    so a confused model can only hurt on news days, and only within MAX_EXTRA_DAYS.
+    The hybrid: the baseline does the arithmetic, and an LLM reads the insights text and
+    answers only with extra safety days per SKU (inference.INSIGHTS_SYSTEM_PROMPT). On days
+    with no insights the model is not called and the agent plays exactly like the baseline,
+    so a confused model can only hurt on days with insights, and only within MAX_EXTRA_DAYS.
     """
 
-    NO_CALL = "{}  (no news today: baseline only, model not called)"
+    NO_CALL = "{}  (no insights today: baseline only, model not called)"
 
     def __init__(self, model: str, api_key: str, base_url: str, client: Any = None,
                  timeout: float = 60.0) -> None:
@@ -347,11 +347,11 @@ class NewsLLMAgent(Agent):
             client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=1)
         self.client = client
         self.model = model
-        self.action = "news_extra_days"
+        self.action = "insights_extra_days"
         self.last_model_reply = ""
 
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
-        if not obs.news:
+        if not obs.insights:
             self.last_model_reply = self.NO_CALL
             return json.dumps(baseline_policy(obs)), None
         self.last_model_reply = ""
@@ -359,15 +359,15 @@ class NewsLLMAgent(Agent):
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": inference.news_system_prompt(obs)},
-                    {"role": "user", "content": inference.build_news_prompt(obs)},
+                    {"role": "system", "content": inference.insights_system_prompt(obs)},
+                    {"role": "user", "content": inference.build_insights_prompt(obs)},
                 ],
                 temperature=inference.TEMPERATURE,
                 max_tokens=inference.MAX_TOKENS,
             )
             text = (completion.choices[0].message.content or "").strip()
         except Exception as exc:
-            # The baseline still orders: a failed call costs only the news adjustment.
+            # The baseline still orders: a failed call costs only the insights adjustment.
             return json.dumps(baseline_policy(obs)), f"{type(exc).__name__}: {exc}"
         self.last_model_reply = text
         extra = inference.parse_extra_days(obs, inference.parse_json_object(text))

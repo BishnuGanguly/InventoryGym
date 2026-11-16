@@ -148,9 +148,9 @@ def test_fixed_numbers_draw_nothing():
     assert set(config.initial_inventory.values()) == {10.0}
 
 
-def test_news_works_for_any_world():
-    config = get_task_config("holiday_rush", 2, news=1, world=load_world(GROCERY))
-    assert {e.sku_id for e in config.news} == {"biscuits", "milk", "ice_cream"}
+def test_insights_works_for_any_world():
+    config = get_task_config("holiday_rush", 2, insights=True, world=load_world(GROCERY))
+    assert {e.sku_id for e in config.insights} == {"biscuits", "milk", "ice_cream"}
 
 
 # ---------------------------------------------------------------------------
