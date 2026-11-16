@@ -7,7 +7,7 @@ Three steps on one page:
                      world, an example or a blank starter; edit
                      storage, products, tasks and events in tables, or edit / upload
                      the world file itself. Mistakes are explained in place.
-2. Run an episode  - any task of that world, with or without news, played by a rule
+2. Run an episode  - any task of that world, with or without insights, played by a rule
                      agent, a reference agent or an LLM, with charts redrawn every
                      simulated day and the baseline and oracle on the same seed.
 3. Compare agents  - several agents over several seeds, paired seed by seed.
@@ -39,10 +39,10 @@ import plotly.graph_objects as go
 import yaml
 
 import inference
-from agents import (Agent, BaselineAgent, History, LLMAgent, NewsLLMAgent, NewsPlanAgent, NewsRuleAgent,  # noqa: F401
-                    NothingAgent, OracleAgent, baseline_policy)
+from agents import (Agent, BaselineAgent, History, InsightsPlanAgent, LLMAgent, NothingAgent,  # noqa: F401
+                    OracleAgent, baseline_policy)
 from models import EpisodeConfig, InventoryState, InventoryAction
-from news import find_events
+from insights import find_events
 from tasks import PHARMA_WORLD, TEST_SEEDS, average_step_reward, get_task_config, weighted_fill
 from world import World, WorldError, default_world, load_world_text
 
@@ -66,23 +66,18 @@ TEMPLATE_GROCERY = "Grocery store (example)"
 TEMPLATE_STARTER = "Small shop (blank starter)"
 TEMPLATES = (TEMPLATE_PHARMA, TEMPLATE_GROCERY, TEMPLATE_STARTER)
 
-AGENT_BASELINE = "Baseline rule (no news, no LLM)"
-AGENT_NEWS_PLAN = "News plan (reads the news perfectly; reference)"
-AGENT_NEWS_RULE = "Extra-days news rule (reference)"
+AGENT_BASELINE = "Baseline rule (no insights, no LLM)"
+AGENT_INSIGHTS_PLAN = "Insights plan (reads the insights perfectly; reference)"
 AGENT_ORACLE = "Oracle (perfect foresight; the ceiling)"
-AGENT_NOTHING = "Order nothing (the floor)"
-AGENT_LLM = "LLM: adjusts the baseline's orders"
-AGENT_LLM_NEWS = "LLM: reads the news only (hybrid)"
-RULE_AGENTS = {
-    AGENT_BASELINE: BaselineAgent, AGENT_NEWS_PLAN: NewsPlanAgent, AGENT_NEWS_RULE: NewsRuleAgent,
-    AGENT_ORACLE: OracleAgent, AGENT_NOTHING: NothingAgent,
-}
-LLM_AGENTS = (AGENT_LLM, AGENT_LLM_NEWS)
+AGENT_LLM = "LLM (a language model adjusts the baseline's orders)"
+# Four agents are enough to read a result: a simple rule, the best use of the insights, the
+# ceiling, and a model. The other reference agents of agents.py stay available in eval.py.
+RULE_AGENTS = {AGENT_BASELINE: BaselineAgent, AGENT_INSIGHTS_PLAN: InsightsPlanAgent, AGENT_ORACLE: OracleAgent}
+LLM_AGENTS = (AGENT_LLM,)
 AGENT_CHOICES = [*RULE_AGENTS, *LLM_AGENTS]
 
-NEWS_OFF, NEWS_EXACT, NEWS_NATURAL = "Off", "Exact", "Natural"
-NEWS_INFO = "Exact: one fixed template with the exact days. Natural: varied wording, in your inventory's own words."
-NEWS_LEVELS = {NEWS_OFF: 0, NEWS_EXACT: 1, NEWS_NATURAL: 2}
+INSIGHTS_LABEL = "Insights: announce disruptions 5 to 10 days ahead"
+INSIGHTS_INFO = "On: agents that read insights can prepare. Off: every agent sees only the stock report."
 
 # Models offered for the LLM agents: suggestions only, any model the endpoint serves can be typed.
 MODEL_SUGGESTIONS = [inference.MODEL_NAME, "Qwen/Qwen2.5-7B-Instruct", "meta-llama/Llama-3.1-8B-Instruct",
@@ -180,11 +175,11 @@ STYLE = """
 .ig-value { font-size: 26px; font-weight: 700; color: var(--body-text-color); margin-top: 4px; line-height: 1.1; }
 .ig-chips-note { font-size: 12px; }
 
-/* news and verdict */
-.ig-news { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
-.ig-news-item { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border-color-primary);
+/* insights and verdict */
+.ig-insights { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
+.ig-insights-item { padding: 9px 14px; border-radius: 10px; border: 1px solid var(--border-color-primary);
                 background: var(--block-background-fill); font-size: 14px; color: var(--body-text-color); }
-.ig-news-new { border-left: 4px solid var(--ig-orange); }
+.ig-insights-new { border-left: 4px solid var(--ig-orange); }
 .ig-day { display: inline-block; min-width: 54px; font-weight: 600; color: var(--body-text-color-subdued); }
 .ig-verdict { font-size: 16px; }
 
@@ -289,18 +284,15 @@ def ready_html() -> str:
 <div class="ig-sub" style="font-size:14px">Pick a task and an agent, then press <b>▶ Run episode</b>.</div>
 <div class="ig-feats">
 <div class="ig-feat"><b>📈 A live score</b>How the agent does against a simple rule and against perfect foresight, day by day.</div>
-<div class="ig-feat"><b>📰 The news</b>Disruptions announced a few days ahead, in your inventory's own words.</div>
+<div class="ig-feat"><b>💡 Insights</b>Disruptions announced a few days ahead, in your inventory's own words.</div>
 <div class="ig-feat"><b>🔍 The hidden truth</b>Orange shows what really happened, which the agent never sees.</div></div></div>"""
 
 
 AGENT_HELP = {
-    AGENT_BASELINE: "A simple rule: keep stock for the delivery time plus 3 days. It ignores the news.",
-    AGENT_NEWS_PLAN: "A reference that reads the news perfectly (it sees the events behind it). Shows what the news is worth.",
-    AGENT_NEWS_RULE: "An older reference: the baseline plus extra days for announced events.",
+    AGENT_BASELINE: "A simple rule: keep stock for the delivery time plus 3 days. It ignores the insights.",
+    AGENT_INSIGHTS_PLAN: "A reference that reads the insights perfectly (it sees the events behind them). Shows what the insights are worth.",
     AGENT_ORACLE: "Knows the future, so nobody can beat it. It marks the best possible score.",
-    AGENT_NOTHING: "Never orders. The floor: shows how bad it gets.",
-    AGENT_LLM: "A language model adds extra days of stock on top of the baseline's orders. Needs a token (More options).",
-    AGENT_LLM_NEWS: "A language model reads only the news; the baseline places the orders. Needs a token, and news switched on.",
+    AGENT_LLM: "A language model reads the report (and the insights, when on) and adds extra days of stock on top of the baseline's orders. Needs your token (More options).",
 }
 
 
@@ -326,19 +318,18 @@ class EpisodeTrace:
     llm_errors: int = 0
     finished: bool = False
     stopped_reason: str = ""
-    news_level: int = 0
+    insights_on: bool = False
     # Score so far, day by day, of reference agents on this very episode: {"Baseline": [...], "Oracle": [...]}.
     references: Dict[str, List[float]] = field(default_factory=dict)
 
 
-def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, news: int = 0,
-                scenario: str = "fixed") -> Iterator[EpisodeTrace]:
+def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, insights: bool = False) -> Iterator[EpisodeTrace]:
     """Play one episode, yielding the (same, growing) trace after reset and after every day."""
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task_name, seed=seed, news=news, scenario=scenario, world=world)
+    obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
     if hasattr(agent, "start_episode"):
         agent.start_episode(env)
-    trace = EpisodeTrace(task_name=task_name, seed=seed, config=env._episode_config, state=obs, news_level=news)
+    trace = EpisodeTrace(task_name=task_name, seed=seed, config=env._episode_config, state=obs, insights_on=bool(insights))
     history: History = []
     consecutive_errors = 0
     yield trace
@@ -346,8 +337,8 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
     while not obs.done:
         day = obs.current_date
         delivered_before = {sku_id: len(h) for sku_id, h in obs.lead_time_history.items()}
-        news_today = list(obs.news)
-        news_before = set(trace.rows[-1]["news"]) if trace.rows else set()
+        insights_today = list(obs.insights)
+        insights_before = set(trace.rows[-1]["insights"]) if trace.rows else set()
 
         reply, error = agent.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
@@ -363,8 +354,8 @@ def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = 
             "reward": obs.reward,
             "fill": weighted_fill(obs.skus),
             "waste": obs.inventory_excess_today,
-            "news": news_today,
-            "new_news": [n for n in news_today if n not in news_before],
+            "insights": insights_today,
+            "new_insights": [n for n in insights_today if n not in insights_before],
             "storage": {name: pool.ratio for name, pool in obs.storage.items()},
             "skus": {
                 sku_id: {
@@ -411,19 +402,18 @@ def running_score(rewards: Sequence[float]) -> List[float]:
     return out
 
 
-def play_score_curve(agent: Any, task_name: str, seed: int, world: Optional[World], news: int,
-                     scenario: str) -> List[float]:
+def play_score_curve(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> List[float]:
     """A rule agent's score so far, day by day, on one episode."""
     final = None
-    for final in run_episode(task_name, seed, agent, world=world, news=news, scenario=scenario):
+    for final in run_episode(task_name, seed, agent, world=world, insights=insights):
         pass
     return running_score([r["reward"] for r in final.rows])
 
 
-def reference_curves(task_name: str, seed: int, world: Optional[World], news: int, scenario: str) -> Dict[str, List[float]]:
+def reference_curves(task_name: str, seed: int, world: Optional[World], insights: bool) -> Dict[str, List[float]]:
     """The baseline's and the oracle's score so far on this episode, to judge an agent against."""
-    return {"Baseline": play_score_curve(BaselineAgent(), task_name, seed, world, news, scenario),
-            "Oracle": play_score_curve(OracleAgent(), task_name, seed, world, news, scenario)}
+    return {"Baseline": play_score_curve(BaselineAgent(), task_name, seed, world, insights),
+            "Oracle": play_score_curve(OracleAgent(), task_name, seed, world, insights)}
 
 
 def gap_closed(score: float, baseline: float, oracle: float) -> Optional[float]:
@@ -446,9 +436,7 @@ def make_agent(label: str, model: str = "", token: str = "") -> Any:
     if label in RULE_AGENTS:
         return RULE_AGENTS[label]()
     if label == AGENT_LLM:
-        return LLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL, action="adjust")
-    if label == AGENT_LLM_NEWS:
-        return NewsLLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL)
+        return LLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL)
     raise ValueError(f"unknown agent {label!r}")
 
 
@@ -486,7 +474,7 @@ def _mark_today(fig: go.Figure, trace: EpisodeTrace) -> None:
 def _mark_events(fig: go.Figure, config: EpisodeConfig, sku_id: str, kinds: Sequence[str]) -> None:
     """
     Shade the days of a product's disruptions (hidden truth, orange) and, when the episode
-    has news, mark the day each one was announced.
+    has insights, mark the day each one was announced.
     """
     labels = {"supplier_delay": "delay", "demand_surge": "surge"}
     for event in find_events(config):
@@ -495,10 +483,10 @@ def _mark_events(fig: go.Figure, config: EpisodeConfig, sku_id: str, kinds: Sequ
         fig.add_vrect(x0=event["start_day"] - 0.5, x1=event["end_day"] + 0.5, fillcolor=ORANGE, opacity=0.08,
                       line_width=0, annotation_text=f"{labels[event['kind']]} ×{event['multiplier']:.1f}",
                       annotation_position="top left", annotation_font=dict(size=11, color=ORANGE))
-    for event in config.news:
+    for event in config.insights:
         if event.sku_id == sku_id and event.kind in kinds:
             fig.add_vline(x=event.announce_day, line_width=1.5, line_dash="dot", line_color=VIOLET,
-                          annotation_text="news", annotation_position="bottom right",
+                          annotation_text="insights", annotation_position="bottom right",
                           annotation_font=dict(size=11, color=VIOLET))
 
 
@@ -681,7 +669,7 @@ def comparison_figure(table: pd.DataFrame) -> go.Figure:
     """Mean score per agent with its 95% interval."""
     fig = go.Figure()
     if len(table):
-        colours = [ORANGE if "Oracle" in a else INK_MUTED if a in (AGENT_BASELINE, AGENT_NOTHING) else BLUE
+        colours = [ORANGE if "Oracle" in a else INK_MUTED if a == AGENT_BASELINE else BLUE
                    for a in table["Agent"]]
         fig.add_bar(x=table["Mean score"], y=table["Agent"], orientation="h",
                     marker=dict(color=colours, cornerradius=4),
@@ -734,24 +722,24 @@ def kpi_html(trace: EpisodeTrace) -> str:
     return f'<div class="ig-kpis">{cells}</div>'
 
 
-def news_html(trace: EpisodeTrace) -> str:
-    """The news published so far, newest first; items new today are marked."""
-    if trace.news_level == 0:
-        return '<div class="ig-hint">News is off for this run. Switch it on to announce disruptions a few days ahead.</div>'
+def insights_html(trace: EpisodeTrace) -> str:
+    """The insights published so far, newest first; items new today are marked."""
+    if not trace.insights_on:
+        return '<div class="ig-hint">Insights are off for this run. Switch it on to announce disruptions a few days ahead.</div>'
     seen: Dict[str, bool] = {}
     for r in trace.rows:
-        for item in r["news"]:
-            seen[item] = item in r["new_news"] and r is trace.rows[-1]
+        for item in r["insights"]:
+            seen[item] = item in r["new_insights"] and r is trace.rows[-1]
     if not trace.rows:
-        seen = {item: True for item in trace.state.news}
+        seen = {item: True for item in trace.state.insights}
     if not seen:
-        return '<div class="ig-hint">No news yet. Disruptions are announced 5 to 10 days before they start.</div>'
+        return '<div class="ig-hint">No insights yet. Disruptions are announced 5 to 10 days before they start.</div>'
     items = []
     for item, is_new in reversed(list(seen.items())):
         day, _, text = item.partition(": ")
-        items.append(f'<div class="ig-news-item{" ig-news-new" if is_new else ""}">'
+        items.append(f'<div class="ig-insights-item{" ig-insights-new" if is_new else ""}">'
                      f'<span class="ig-day">{html.escape(day)}</span>{html.escape(text)}</div>')
-    return f'<div class="ig-news">{"".join(items)}</div>'
+    return f'<div class="ig-insights">{"".join(items)}</div>'
 
 
 def verdict_html(trace: EpisodeTrace, agent_label: str) -> str:
@@ -846,10 +834,10 @@ def _mean_ci(values: Sequence[float]) -> Tuple[float, float]:
     return mean, ci
 
 
-def final_score(agent: Any, task_name: str, seed: int, world: Optional[World], news: int, scenario: str) -> Tuple[float, int]:
+def final_score(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> Tuple[float, int]:
     """(final score, failed model calls) of one episode. An LLM run that stops early scores its unplayed days as 0."""
     trace = None
-    for trace in run_episode(task_name, seed, agent, world=world, news=news, scenario=scenario):
+    for trace in run_episode(task_name, seed, agent, world=world, insights=insights):
         pass
     return average_step_reward(trace.state, trace.config.no_of_days), trace.llm_errors
 
@@ -900,7 +888,7 @@ def comparison_table(scores: Dict[str, List[float]]) -> pd.DataFrame:
 HERO = """
 <div class="ig-hero">
   <div class="ig-hero-top"><div class="ig-logo">📦</div>
-    <div><h1>InventoryGym</h1><p>Describe an inventory, watch an agent run it, and see what reading the news is worth.</p></div></div>
+    <div><h1>InventoryGym</h1><p>Describe an inventory, watch an agent run it, and see what the insights are worth.</p></div></div>
   <div class="ig-steps">
     <span class="ig-step"><b>1</b>Describe your inventory</span><span class="ig-arrow">→</span>
     <span class="ig-step"><b>2</b>Run an agent</span><span class="ig-arrow">→</span>
@@ -916,13 +904,13 @@ STEP1 = ("**Pick a starting point, or build your own.** The examples load at onc
          "the tab you used.")
 BUILDER_HELP = ("Plain words in, a working inventory out. **Create my inventory** replaces the inventory above; you can then "
                 "fine-tune it under **Tables** or **File**.")
-STEP2 = ("Choose a task and an agent and press **Run episode**. With news on, disruptions are announced 5 to 10 days ahead: "
-         "agents that read it can prepare, the baseline cannot.")
+STEP2 = ("Choose a task and an agent and press **Run episode**. With insights on, disruptions are announced 5 to 10 days ahead: "
+         "agents that read them can prepare, the baseline cannot.")
 STEP3 = ("Run several agents on the same seeds of one task. Every agent faces exactly the same episodes, so differences are "
          "taken seed by seed.")
-LLM_NOTE = (f"LLM agents call `{inference.API_BASE_URL}` with the token you paste here, on your own account. The token is "
+LLM_NOTE = (f"The LLM agent calls `{inference.API_BASE_URL}` with the token you paste here, on your own account. The token is "
             "used for this run only and is never stored or logged; the server's own secrets are never used for a "
-            "visitor's run. One model call per simulated day; the hybrid agent only calls the model on days with news.")
+            "visitor's run. One model call per simulated day.")
 
 
 def _tables_update(data: Dict[str, Any]) -> List[Any]:
@@ -1005,13 +993,13 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                         apply_file = gr.Button("Use this file", variant="primary", elem_classes="ig-cta")
                 table_parts = [f_name, f_business, f_days, f_storage, f_products, f_tasks, f_events]
 
-                gr.HTML(section_html("🔍", "Preview what can go wrong", "what a task does to each product (the plan the agent never sees), and the news an agent would read"))
+                gr.HTML(section_html("🔍", "Preview what can go wrong", "what a task does to each product (the plan the agent never sees), and the insights an agent would read"))
                 with gr.Row():
                     p_task = gr.Dropdown(start_world.task_names, value=start_task, label="Task")
                     p_seed = gr.Number(value=42, precision=0, label="Seed")
                     p_btn = gr.Button("Preview")
                 p_plot = gr.Plot(label="Demand and lead time, as multiples of normal")
-                p_news = gr.HTML()
+                p_insights = gr.HTML()
 
             # ------------------------------------------------------------------ 2
             with gr.Tab("2 · Run an episode"):
@@ -1023,16 +1011,14 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 with gr.Row():
                     seed = gr.Number(value=42, precision=0, label="Seed", info="same seed, same episode", scale=2)
                     dice = gr.Button("🎲 New seed", scale=1, min_width=120, elem_classes="ig-dice")
-                    news_level = gr.Radio(list(NEWS_LEVELS), value=NEWS_NATURAL, label="News", info=NEWS_INFO, scale=4)
+                    insights_switch = gr.Checkbox(value=True, label=INSIGHTS_LABEL, info=INSIGHTS_INFO, scale=4)
                 with gr.Accordion("⚙ More options", open=False):
-                    with gr.Row():
-                        delay = gr.Slider(0.0, 1.0, value=0.1, step=0.05, label="Pause per day (seconds)", scale=2)
-                        random_scenario = gr.Checkbox(value=False, label="Random scenario (pharma world only)", scale=1)
-                    gr.Markdown("**LLM settings** (only for the LLM agents)")
+                    delay = gr.Slider(0.0, 1.0, value=0.1, step=0.05, label="Pause per day (seconds)")
+                    gr.Markdown("**LLM settings** (only for the LLM agent)")
                     with gr.Row():
                         model = gr.Dropdown(MODEL_SUGGESTIONS, value=inference.MODEL_NAME, allow_custom_value=True,
                                             label="Model (pick one or type any model the endpoint serves)")
-                        token = gr.Textbox(type="password", label="Your API token (LLM agents only)",
+                        token = gr.Textbox(type="password", label="Your API token (LLM agent only)",
                                            placeholder="Paste a token for the endpoint; used for this run only")
                     gr.Markdown(LLM_NOTE)
                 with gr.Row():
@@ -1046,8 +1032,8 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     with gr.Row():
                         score_plot = gr.Plot(label="Score so far: this agent, the baseline and the oracle")
                         storage_plot = gr.Plot(label="Storage in use")
-                    gr.HTML(section_html("📰", "News feed"))
-                    news_feed = gr.HTML()
+                    gr.HTML(section_html("💡", "Insights"))
+                    insights_feed = gr.HTML()
                     gr.HTML(section_html("🔍", "One product in detail"))
                     focus = gr.Dropdown(list(start_world.products), value=None, label="Product shown in the charts below")
                     with gr.Row():
@@ -1066,28 +1052,27 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 gr.Markdown(STEP3)
                 with gr.Row():
                     c_task = gr.Dropdown(start_world.task_names, value=start_task, label="Task", scale=3)
-                    c_news = gr.Radio(list(NEWS_LEVELS), value=NEWS_NATURAL, label="News", info=NEWS_INFO, scale=4)
+                    c_insights = gr.Checkbox(value=True, label=INSIGHTS_LABEL, info=INSIGHTS_INFO, scale=4)
                     c_seeds = gr.Slider(3, MAX_COMPARE_SEEDS, value=10, step=1, label="Episodes per agent (test seeds)", scale=3)
-                c_agents = gr.CheckboxGroup(AGENT_CHOICES, value=[AGENT_BASELINE, AGENT_NEWS_PLAN, AGENT_ORACLE],
-                                            label=f"Agents (LLM agents run at most {MAX_COMPARE_SEEDS_LLM} episodes, "
+                c_agents = gr.CheckboxGroup(AGENT_CHOICES, value=[AGENT_BASELINE, AGENT_INSIGHTS_PLAN, AGENT_ORACLE],
+                                            label=f"Agents (the LLM agent runs at most {MAX_COMPARE_SEEDS_LLM} episodes, "
                                                   "with the model and token from step 2)")
                 with gr.Row():
                     c_btn = gr.Button("▶ Compare", variant="primary", elem_classes="ig-cta", scale=3)
                     c_stop = gr.Button("■ Stop", scale=1)
-                c_status = gr.Markdown("Pick the agents and press **Compare**. A good first comparison: the baseline, the news plan and the oracle.")
+                c_status = gr.Markdown("Pick the agents and press **Compare**. A good first comparison: the baseline, the insights plan and the oracle.")
                 c_plot = gr.Plot(label="Mean score per agent, with 95% interval")
                 gr.HTML(section_html("📊", "Results", "differences are taken seed by seed"))
                 c_table = gr.HTML(comparison_html(pd.DataFrame(columns=COMPARE_COLUMNS)), apply_default_css=False)
 
         # ====================================================================== callbacks
-        selectors = [task, c_task, p_task, focus, random_scenario]
+        selectors = [task, c_task, p_task, focus]
 
         def _selectors(world: World) -> List[Any]:
             names = world.task_names
             first = "flu_season" if "flu_season" in names else names[0]
             return [gr.update(choices=names, value=first), gr.update(choices=names, value=first),
-                    gr.update(choices=names, value=first), gr.update(choices=list(world.products), value=None),
-                    gr.update(visible=is_builtin(world), value=False)]
+                    gr.update(choices=names, value=first), gr.update(choices=list(world.products), value=None)]
 
         def use_text(text: str):
             """Check a world file's text and, if it is valid, make it the world in use."""
@@ -1150,21 +1135,21 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
         def on_preview(text: str, task_name: str, seed_value):
             try:
                 world = parse_world(text)
-                config = get_task_config(task_name, int(seed_value or 0), news=2, world=world)
+                config = get_task_config(task_name, int(seed_value or 0), insights=True, world=world)
             except (WorldError, ValueError) as exc:
                 return go.Figure(), world_summary_html(None, str(exc))
-            items = "".join(f'<div class="ig-news-item"><span class="ig-day">Day {e.announce_day}</span>'
-                            f"{html.escape(e.message)}</div>" for e in sorted(config.news, key=lambda e: e.announce_day))
-            news = f'<div class="ig-news">{items}</div>' if items else '<div class="ig-hint">No news: nothing is disrupted in this task.</div>'
-            return preview_figure(config), news
+            items = "".join(f'<div class="ig-insights-item"><span class="ig-day">Day {e.announce_day}</span>'
+                            f"{html.escape(e.message)}</div>" for e in sorted(config.insights, key=lambda e: e.announce_day))
+            insights = f'<div class="ig-insights">{items}</div>' if items else '<div class="ig-hint">No insights: nothing is disrupted in this task.</div>'
+            return preview_figure(config), insights
 
-        p_btn.click(on_preview, inputs=[world_text, p_task, p_seed], outputs=[p_plot, p_news])
+        p_btn.click(on_preview, inputs=[world_text, p_task, p_seed], outputs=[p_plot, p_insights])
 
-        run_outputs = [status, results, kpis, verdict, score_plot, storage_plot, news_feed, focus, stock_plot, lead_plot,
+        run_outputs = [status, results, kpis, verdict, score_plot, storage_plot, insights_feed, focus, stock_plot, lead_plot,
                        orders_plot, table, heat_plot, log, trace_state]
 
 
-        def on_run(text, task_name, seed_value, news_choice, agent_choice, pause, use_random, model_name, api_token):
+        def on_run(text, task_name, seed_value, insights_choice, agent_choice, pause, model_name, api_token):
             def message(note: str):
                 return (note_html(note), *[gr.skip()] * (len(run_outputs) - 1))
 
@@ -1176,23 +1161,19 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             if task_name not in world.tasks:
                 yield message("⚠️ Pick a task of this inventory first.")
                 return
-            news = NEWS_LEVELS.get(news_choice, 0)
-            scenario = "random" if use_random and is_builtin(world) else "fixed"
+            insights = bool(insights_choice)
             seed_int = int(seed_value) if seed_value is not None else 42
             key = ""
             if agent_choice in LLM_AGENTS:
                 key = visitor_token(api_token)
                 if not key:
-                    yield message("⚠️ The LLM agents need your own token: paste one under "
+                    yield message("⚠️ The LLM agent needs your own token: paste one under "
                                   "**More options → LLM settings**.")
-                    return
-                if agent_choice == AGENT_LLM_NEWS and news == 0:
-                    yield message("⚠️ The hybrid agent only reads the news: switch **News** on.")
                     return
             try:
                 runner = make_agent(agent_choice, (model_name or "").strip() or inference.MODEL_NAME, key)
-                references = reference_curves(task_name, seed_int, world, news, scenario)
-                frames = run_episode(task_name, seed_int, runner, world=world, news=news, scenario=scenario)
+                references = reference_curves(task_name, seed_int, world, insights)
+                frames = run_episode(task_name, seed_int, runner, world=world, insights=insights)
                 sku_id = None
                 for trace in frames:
                     trace.references = references
@@ -1201,7 +1182,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     yield (
                         status_html(trace, agent_choice), gr.update(visible=True) if first else gr.skip(),
                         kpi_html(trace), verdict_html(trace, agent_choice),
-                        score_figure(trace), storage_figure(trace), news_html(trace),
+                        score_figure(trace), storage_figure(trace), insights_html(trace),
                         gr.update(choices=list(trace.config.skus), value=sku_id) if first else gr.skip(),
                         *render_detail(trace, sku_id), unmet_heatmap(trace), decisions_table(trace), trace,
                     )
@@ -1216,7 +1197,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             return render_detail(trace, sku_id)
 
         run_event = run_btn.click(
-            on_run, inputs=[world_text, task, seed, news_level, agent, delay, random_scenario, model, token],
+            on_run, inputs=[world_text, task, seed, insights_switch, agent, delay, model, token],
             outputs=run_outputs,
         )
         stop_btn.click(lambda: note_html("⏹ Stopped.", "info"), outputs=status, cancels=[run_event])
@@ -1232,7 +1213,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
         world_text.change(on_world_change, inputs=world_text, outputs=current)
         focus.input(on_focus, inputs=[trace_state, focus], outputs=[stock_plot, lead_plot, orders_plot, table])
 
-        def on_compare(text, task_name, news_choice, n_seeds, chosen, model_name, api_token):
+        def on_compare(text, task_name, insights_choice, n_seeds, chosen, model_name, api_token):
             empty = pd.DataFrame(columns=COMPARE_COLUMNS)
             try:
                 world = parse_world(text)
@@ -1242,7 +1223,7 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
             if task_name not in world.tasks or not chosen:
                 yield "⚠️ Pick a task and at least one agent.", gr.skip(), gr.skip()
                 return
-            news = NEWS_LEVELS.get(news_choice, 0)
+            insights = bool(insights_choice)
             n = max(1, min(int(n_seeds or 1), MAX_COMPARE_SEEDS))
             key = visitor_token(api_token)
             scores: Dict[str, List[float]] = {}
@@ -1252,15 +1233,12 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 if label in LLM_AGENTS and not key:
                     notes.append(f"{label}: skipped, it needs a token (step 2, LLM settings).")
                     continue
-                if label == AGENT_LLM_NEWS and news == 0:
-                    notes.append(f"{label}: skipped, it only reads the news and news is off.")
-                    continue
                 seeds = list(TEST_SEEDS[:min(n, MAX_COMPARE_SEEDS_LLM) if label in LLM_AGENTS else n])
                 values, errors = [], 0
                 for s in seeds:
                     try:
                         value, failed = final_score(make_agent(label, (model_name or "").strip() or inference.MODEL_NAME, key),
-                                                    task_name, s, world, news, "fixed")
+                                                    task_name, s, world, insights, "fixed")
                     except (WorldError, ValueError) as exc:
                         notes.append(f"{label}: {exc}")
                         break
@@ -1275,10 +1253,10 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 yield "⚠️ Nothing was run. " + " ".join(notes), comparison_figure(empty), comparison_html(empty)
                 return
             result = comparison_table(scores)
-            done = f"✅ Done: **{task_name}**, news {news_choice.lower()}, test seeds {TEST_SEEDS[0]} to {TEST_SEEDS[n - 1]}."
+            done = f"✅ Done: **{task_name}**, insights {'on' if insights else 'off'}, test seeds {TEST_SEEDS[0]} to {TEST_SEEDS[n - 1]}."
             yield done + ("\n\n" + "\n".join(f"- {x}" for x in notes) if notes else ""), comparison_figure(result), comparison_html(result)
 
-        compare_event = c_btn.click(on_compare, inputs=[world_text, c_task, c_news, c_seeds, c_agents, model, token],
+        compare_event = c_btn.click(on_compare, inputs=[world_text, c_task, c_insights, c_seeds, c_agents, model, token],
                                     outputs=[c_status, c_plot, c_table])
         c_stop.click(lambda: "⏹️ Stopped.", outputs=c_status, cancels=[compare_event])
 

@@ -45,15 +45,14 @@ sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
 from agents import (  # noqa: E402
-    Agent, BaselineAgent, LLMAgent, NewsLLMAgent, NewsPlanAgent, NewsRuleAgent, NothingAgent, OracleAgent,
+    Agent, BaselineAgent, LLMAgent, InsightsLLMAgent, InsightsPlanAgent, InsightsRuleAgent, NothingAgent, OracleAgent,
 )
 from models import InventoryAction  # noqa: E402
 from server.inventory_environment import InventoryEnvironment  # noqa: E402
-from news import NEWS_LEVELS  # noqa: E402
 from tasks import SEED_SPLITS, compute_final_score  # noqa: E402
 from world import DEFAULT_WORLD, World, WorldError, builtin_worlds, load_world  # noqa: E402
 
-AGENTS = ("nothing", "baseline", "oracle", "llm", "baseline_news", "news_plan", "llm_news")
+AGENTS = ("nothing", "baseline", "oracle", "llm", "baseline_insights", "insights_plan", "llm_insights")
 JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 # An LLM that fails this many calls in a row from the very first day is
 # misconfigured (bad token, wrong model, server down): stop instead of
@@ -72,18 +71,18 @@ def make_agent(name: str, llm: Optional[Dict[str, str]] = None) -> Agent:
         return BaselineAgent()
     if name == "oracle":
         return OracleAgent()
-    if name == "baseline_news":
-        return NewsRuleAgent()
-    if name == "news_plan":
-        return NewsPlanAgent()
-    if name == "llm_news":
+    if name == "baseline_insights":
+        return InsightsRuleAgent()
+    if name == "insights_plan":
+        return InsightsPlanAgent()
+    if name == "llm_insights":
         llm = llm or {}
-        return NewsLLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
+        return InsightsLLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
                             timeout=float(llm.get("timeout", 60.0)))
     if name == "llm":
         llm = llm or {}
         return LLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
-                        timeout=float(llm.get("timeout", 60.0)), action=llm.get("action", "adjust"))
+                        timeout=float(llm.get("timeout", 60.0)))
     raise ValueError(f"Unknown agent '{name}'. Choose from {AGENTS}.")
 
 
@@ -95,20 +94,18 @@ def run_episode(
     llm: Optional[Dict[str, str]] = None,
     save_steps: bool = False,
     on_day: Optional[Callable[[int, str], None]] = None,
-    news: int = 0,
-    scenario: str = "fixed",
+    insights: bool = False,
     world: Optional[World] = None,
 ) -> Dict[str, Any]:
     """
     Play one full episode and return a JSON-serialisable record of it.
     `on_day(day, reply)`, if given, is called after every simulated day (e.g. to show progress).
-    `news` is the news level (0 none, 1 exact, 2 varied; see news.py); `scenario` is
-    "fixed" (the original tasks) or "random" (disrupted SKUs and days drawn per seed).
+    `insights` announces the disruptions ahead of time (see insights.py).
     `world` is the world the task belongs to (default the built-in pharma world).
     """
     agent = make_agent(agent_name, llm)
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task_name, seed=seed, news=news, scenario=scenario, world=world)
+    obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
     agent.start_episode(env)
 
     history: List[Tuple[int, str, str]] = []
@@ -119,9 +116,9 @@ def run_episode(
 
     while not obs.done:
         day = obs.current_date
-        obs_news = obs.news
+        obs_insights = obs.insights
         reply, error = agent.act(obs, history)
-        # What the model itself wrote; for the "adjust" and "days" formats `reply` is the
+        # What the model itself wrote; `reply` is the
         # converted order, so check and log the model's own text.
         model_reply = getattr(agent, "last_model_reply", None)
         model_reply = reply if model_reply is None else model_reply
@@ -144,7 +141,7 @@ def run_episode(
         if save_steps:
             steps.append({
                 "day": day,
-                "news": list(obs_news),
+                "insights": list(obs_insights),
                 "reply": model_reply,
                 "orders_sent": reply,
                 "error": error,
@@ -156,13 +153,12 @@ def run_episode(
     days = len(history)
     record: Dict[str, Any] = {
         "agent": agent_name,
-        "model": (llm or {}).get("model") if agent_name in ("llm", "llm_news") else None,
+        "model": (llm or {}).get("model") if agent_name in ("llm", "llm_insights") else None,
         "action_format": getattr(agent, "action", None),
         "task": task_name,
         "seed": seed,
         "split": split,
-        "news": news,
-        "scenario": scenario,
+        "insights": insights,
         **({"world": world.name} if world is not None else {}),
         "score": round(compute_final_score(obs, env._episode_config), 6),
         "avg_fill": round(fill_total / days, 6) if days else 0.0,
@@ -190,15 +186,14 @@ def evaluate(
     workers: int = 1,
     llm: Optional[Dict[str, str]] = None,
     save_steps: bool = False,
-    news: int = 0,
-    scenario: str = "fixed",
+    insights: bool = False,
     world: Optional[World] = None,
 ) -> List[Dict[str, Any]]:
     """Run `episodes` seeds (the first N of the split) on each task (of `world`, default pharma)."""
     seeds = list(SEED_SPLITS[split][:episodes])
     jobs = [
-        dict(agent_name=agent_name, task_name=t, seed=s, split=split, llm=llm, save_steps=save_steps, news=news,
-             scenario=scenario, world=world)
+        dict(agent_name=agent_name, task_name=t, seed=s, split=split, llm=llm, save_steps=save_steps, insights=insights,
+             world=world)
         for t in task_names for s in seeds
     ]
     if workers <= 1:
@@ -286,7 +281,7 @@ def print_summary(records: Sequence[Dict[str, Any]]) -> None:
     failures = sum(r["parse_failures"] for r in records)
     errors = sum(r["llm_errors"] for r in records)
     replies = sum(r["days"] for r in records)
-    if records and records[0]["agent"] in ("llm", "llm_news"):
+    if records and records[0]["agent"] in ("llm", "llm_insights"):
         print(f"\nreplies without any JSON object: {failures}/{replies} ({failures / max(replies, 1):.1%}); "
               f"failed LLM calls: {errors}")
 
@@ -314,20 +309,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--workers", type=int, default=None,
                         help="parallel processes (default: CPU count for rule agents, 1 for llm)")
     parser.add_argument("--save-steps", action="store_true", help="also store every day's reply and reward")
-    parser.add_argument("--news", type=int, choices=NEWS_LEVELS, default=0,
-                        help="announce disruptions ahead: 0 no news (default), 1 exact template, 2 varied wording")
-    parser.add_argument("--random-scenarios", action="store_true",
-                        help="draw each episode's disrupted SKUs and days from its seed, with 14 days of "
-                             "storage, instead of the fixed tasks")
+    parser.add_argument("--insights", action="store_true",
+                        help="give the agent insights: each disruption is announced 5 to 10 days ahead")
     parser.add_argument("--out", type=Path, help="output .jsonl path")
     parser.add_argument("--model", default=inference.MODEL_NAME, help="llm: model name")
     parser.add_argument("--base-url", default=inference.API_BASE_URL, help="llm: OpenAI-compatible endpoint")
     parser.add_argument("--api-key", default=None, help="llm: API key (default: HF_TOKEN / API_KEY env var)")
     parser.add_argument("--timeout", type=float, default=60.0,
                         help="llm: seconds per model call (raise for large local models on a CPU)")
-    parser.add_argument("--action", choices=inference.ACTION_FORMATS, default="adjust",
-                        help="llm: adjust = extra days on top of the baseline's default (default); "
-                             "days = days of stock per SKU; units = units to order")
     parser.add_argument("--compare", nargs=2, type=Path, metavar=("CANDIDATE", "REFERENCE"),
                         help="compare two result files seed by seed instead of running")
     parser.add_argument("--oracle", type=Path, help="with --compare: oracle results, to report gap closed")
@@ -347,30 +336,26 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         parser.error(str(exc))
     # Compared by content, not name: an edited copy of pharma.yaml is a world of its own.
     builtin_default = world == load_world(DEFAULT_WORLD)
-    if args.random_scenarios and not builtin_default:
-        parser.error(f"--random-scenarios is only available for the built-in {DEFAULT_WORLD} world for now")
     task_names = world.task_names if args.tasks == "all" else [t.strip() for t in args.tasks.split(",")]
     unknown = [t for t in task_names if t not in world.tasks]
     if unknown:
         parser.error(f"unknown task(s) {unknown} in world '{world.name}'; choose from {sorted(world.tasks)}")
 
     llm = None
-    if args.agent in ("llm", "llm_news"):
+    if args.agent in ("llm", "llm_insights"):
         # Local servers such as Ollama ignore the key, but the client needs a non-empty one.
         api_key = args.api_key or os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "not-needed"
         llm = {"model": args.model, "base_url": args.base_url, "api_key": api_key,
-               "timeout": args.timeout, "action": args.action}
+               "timeout": args.timeout}
     workers = args.workers or (1 if llm else min(os.cpu_count() or 1, 8))
 
-    scenario = "random" if args.random_scenarios else "fixed"
-    records = evaluate(args.agent, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.news,
-                       scenario, None if builtin_default else world)
+    records = evaluate(args.agent, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.insights,
+                       None if builtin_default else world)
     name = args.agent if not llm else args.agent + "_" + re.sub(r"[^A-Za-z0-9.]+", "-", args.model)
     if not builtin_default:
         name = re.sub(r"[^A-Za-z0-9.]+", "-", world.name) + "_" + name
-    news = f"_news{args.news}" if args.news else ""
-    rs = "_rs" if args.random_scenarios else ""
-    out = args.out or ROOT / "results" / f"{name}{news}{rs}_{args.split}_{args.episodes}.jsonl"
+    insights = "_insights" if args.insights else ""
+    out = args.out or ROOT / "results" / f"{name}{insights}_{args.split}_{args.episodes}.jsonl"
     write_jsonl(out, records)
     print_summary(records)
     print(f"\n{len(records)} episodes written to {out}")

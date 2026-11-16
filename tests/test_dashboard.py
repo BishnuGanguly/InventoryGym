@@ -22,7 +22,10 @@ from server.dashboard import (
     score_so_far,
     unmet_heatmap,
 )
-from tasks import TASK_REGISTRY, compute_final_score
+import inference
+from agents import baseline_policy
+from server.inventory_environment import InventoryEnvironment
+from tasks import FIXED_TASKS, compute_final_score
 
 
 class StubCompletions:
@@ -39,9 +42,9 @@ class StubCompletions:
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
-def stub_llm(reply=None, error=None, action="units") -> LLMAgent:
+def stub_llm(reply=None, error=None) -> LLMAgent:
     client = SimpleNamespace(chat=SimpleNamespace(completions=StubCompletions(reply, error)))
-    return LLMAgent(model="stub", api_key="unused", base_url="unused", client=client, action=action)
+    return LLMAgent(model="stub", api_key="unused", base_url="unused", client=client)
 
 
 def last(frames):
@@ -51,7 +54,7 @@ def last(frames):
     return trace
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_baseline_plays_full_episode(task_name):
     trace = last(run_episode(task_name, 42, BaselineAgent()))
     assert trace.finished and not trace.stopped_reason
@@ -60,10 +63,17 @@ def test_baseline_plays_full_episode(task_name):
 
 
 def test_llm_free_text_reply_is_parsed():
-    agent = stub_llm(reply='Stocking up.\n```json\n{"Insulin": 30, "paracetamol": "500"}\n```')
+    agent = stub_llm(reply='Stocking up.\n```json\n{"Insulin": 3, "paracetamol": "5"}\n```')
     trace = last(run_episode("flu_season", 1, agent))
     assert trace.finished and trace.llm_errors == 0
-    assert trace.rows[0]["orders"] == {"insulin": 30.0, "paracetamol": 500.0}
+    # The reply is extra days on top of the baseline's order, read from free text.
+    start = InventoryEnvironment().reset(task_name="flu_season", seed=1)
+    assert trace.rows[0]["orders"] == baseline_policy(start, extra_days={"insulin": 3.0, "paracetamol": 5.0})
+    assert inference.adjust_days(start, inference.parse_json_object(agent.last_model_reply)) == {"insulin": 3.0, "paracetamol": 5.0}
+    # Over the episode the extra days mean more is ordered than the baseline alone would.
+    plain = last(run_episode("flu_season", 1, BaselineAgent()))
+    ordered = lambda t: sum(sum(r["orders"].values()) for r in t.rows)
+    assert ordered(trace) > ordered(plain)
     prompts = agent.client.chat.completions.prompts
     assert len(prompts) == trace.config.no_of_days
     # From day 2 the prompt carries the previous day's results.
@@ -76,7 +86,8 @@ def test_llm_failures_stop_the_run():
     assert not trace.finished
     assert len(trace.rows) == MAX_CONSECUTIVE_LLM_ERRORS
     assert "401 invalid token" in trace.stopped_reason
-    assert all(r["orders"] == {} for r in trace.rows)
+    # A failed call still places the baseline's order, so the shelves are not left empty.
+    assert trace.rows[0]["orders"] == baseline_policy(InventoryEnvironment().reset(task_name="flu_season", seed=1))
 
 
 def test_rendering_works_before_and_after_a_run():
@@ -128,24 +139,24 @@ def test_table_mistakes_are_explained():
 
 def test_an_episode_of_another_world_draws_every_chart():
     world = D.parse_world(D.template_text(D.TEMPLATE_GROCERY))
-    agent = D.make_agent(D.AGENT_NEWS_PLAN)
-    trace = last(run_episode("surprise_disruptions", 10000, agent, world=world, news=2))
-    trace.references = D.reference_curves("surprise_disruptions", 10000, world, 2, "fixed")
+    agent = D.make_agent(D.AGENT_INSIGHTS_PLAN)
+    trace = last(run_episode("surprise_disruptions", 10000, agent, world=world, insights=True))
+    trace.references = D.reference_curves("surprise_disruptions", 10000, world, True)
     assert trace.finished and set(trace.rows[0]["storage"]) == {"fridge", "freezer", "shelf"}
-    assert any(r["new_news"] for r in trace.rows)
+    assert any(r["new_insights"] for r in trace.rows)
     for figure in (D.score_figure(trace), D.storage_figure(trace), D.preview_figure(trace.config), unmet_heatmap(trace)):
         assert figure.data
     render_detail(trace, D.focus_product(trace.config))
-    assert "ig-news-item" in D.news_html(trace) and "Against the baseline" in kpi_html(trace)
-    assert "Final score" in D.verdict_html(trace, D.AGENT_NEWS_PLAN)
+    assert "ig-insights-item" in D.insights_html(trace) and "Against the baseline" in kpi_html(trace)
+    assert "Final score" in D.verdict_html(trace, D.AGENT_INSIGHTS_PLAN)
     baseline, oracle = trace.references["Baseline"][-1], trace.references["Oracle"][-1]
     assert baseline < score_so_far(trace) < oracle
 
 
 def test_comparison_table_pairs_agents_with_the_baseline():
-    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_NEWS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
-    assert list(table["Agent"]) == [D.AGENT_ORACLE, D.AGENT_NEWS_PLAN, D.AGENT_BASELINE]
-    plan = table[table["Agent"] == D.AGENT_NEWS_PLAN].iloc[0]
+    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_INSIGHTS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
+    assert list(table["Agent"]) == [D.AGENT_ORACLE, D.AGENT_INSIGHTS_PLAN, D.AGENT_BASELINE]
+    plan = table[table["Agent"] == D.AGENT_INSIGHTS_PLAN].iloc[0]
     assert plan["vs baseline"].startswith("+0.0400") and plan["Gap to oracle closed"] == "40%"
     assert D.comparison_figure(table).data
 
@@ -182,10 +193,10 @@ def test_quick_builder_mistakes_keep_the_current_inventory_and_say_what_to_fix()
 
 
 def test_comparison_is_drawn_as_a_table_with_every_agent():
-    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_NEWS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
+    table = D.comparison_table({D.AGENT_BASELINE: [0.80, 0.84], D.AGENT_INSIGHTS_PLAN: [0.85, 0.87], D.AGENT_ORACLE: [0.90, 0.94]})
     page = D.comparison_html(table)
     assert page.count("<tr>") == 1 + 3                                      # the header and every agent
-    assert page.index("Oracle") < page.index("News plan") < page.index("Baseline rule")
+    assert page.index("Oracle") < page.index("Insights plan") < page.index("Baseline rule")
     assert "40%" in page and "<table" in page
     assert "appear here" in D.comparison_html(table.iloc[0:0])
 

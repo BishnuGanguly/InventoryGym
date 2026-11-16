@@ -1,18 +1,23 @@
 # GRPO reward for the `adjust` answer format
 
+> The reward statistics further down (how often answering 0 was best, how far answers
+> differ) were measured on the earlier random scenario of the pharma tasks. The surprise
+> tasks follow the same design with slightly different ranges; those statistics have not
+> been measured again on them.
+
 Implemented in [`grpo_reward.py`](grpo_reward.py); every rule below has a test in
 [`tests/test_grpo_reward.py`](../tests/test_grpo_reward.py).
 
 ## What one training prompt is
 
-One day of one episode: `(task, seed, day)` in the **random scenario**
-(`scenario="random"`) with **level-2 news**, on **train seeds** only. The state of
+One day of one episode: `(task, seed, day)` of a **surprise task**
+(`tasks.SURPRISE_TASKS`) with **insights**, on **train seeds** only. The state of
 that day is rebuilt exactly by resetting the episode and letting the baseline play
 every earlier day (so the state comes from the baseline's play). The prompt is
 exactly what `agents.LLMAgent` sends in the `adjust` format: the system prompt and a
 user turn with the report (no `days_of_cover`) and the results of the last 3 days.
 
-Only **days with visible news** become prompts. On days without news every answer
+Only **days with visible insights** become prompts. On days without insights every answer
 scores the same (measured: 0.001 difference between answers), so they would teach
 nothing.
 
@@ -36,7 +41,7 @@ over the next `HORIZON` days when the answer's extra days are `x`:
 5. Add up the `HORIZON` daily rewards (the environment's own reward:
    `stockout_penalty`-weighted fill minus waste).
 
-| Setting | Value | Why (measured on 90 news-day states) |
+| Setting | Value | Why (measured on 90 insights-day states) |
 |---|---|---|
 | `HORIZON` | 15 days | best signal-to-noise: 8 days 4.6, **15 days 5.2**, 30 days 4.4 |
 | `FUTURES` | 4 | the best answer matches the 16-future best on 91% of states (real future only: 74%; 8 futures: 92%) |
@@ -52,7 +57,7 @@ always gets the same reward.
 `(S(answer) - S(0)) x 100 / HORIZON` is how much better than answering 0 the answer
 does **per day, in hundredths of a day's reward ("points")**. Answering 0 scores
 exactly 0. On the measured states the best of 0, +2, +4, +7, +10 averaged about +1.5
-points; on about half of the news days answering 0 was best.
+points; on about half of the days with insights answering 0 was best.
 
 ### Format penalties
 
@@ -69,29 +74,29 @@ always matters more than the format.
 
 Two choices decide what the reward teaches. Both default to the baseline, the original
 behaviour; training after a warm start on the teacher sets both to the teacher
-(`GRPOReward(continuation="teacher")`, `news_day_prompts(..., states="teacher")`).
+(`GRPOReward(continuation="teacher")`, `insights_day_prompts(..., states="teacher")`).
 
 | Choice | Setting | Values |
 |---|---|---|
 | Who played the days before the prompt | `DayPrompt.states` | `"baseline"` (default), `"teacher"` |
 | Who orders on the days after the answer | `GRPOReward(continuation=...)` | `"baseline"` (default), `"teacher"` |
 
-The teacher is [`teacher.py`](teacher.py): the news plan (`agents.news_plan_targets`)
-answering in the `adjust` format. Played over full episodes it scores 0.887 on test
-seeds (baseline 0.859, "+3 days on every SKU" 0.869, `baseline_news` 0.877, oracle 0.925).
+The teacher is [`teacher.py`](teacher.py): the insights plan (`agents.insights_plan_targets`)
+answering in the `adjust` format. Played over full episodes it scores 0.893 on test
+seeds (baseline 0.871, "+3 days on every SKU" 0.879, `baseline_insights` 0.888, oracle 0.927).
 
 **Why the continuation matters.** With the baseline ordering afterwards, adding many
 days today looks good because nobody will prepare later: the answer is judged as the
 only chance to react. A model that will answer again tomorrow should instead be judged
-as one step of good play. Measured on 300 news days (probe seeds 9000-9059, states
+as one step of good play. Measured on 300 days with insights (probe seeds 9000-9059, states
 from the teacher's play; mean reward in points, 95% interval for the differences):
 
 | Answer | Baseline continues | Teacher continues |
 |---|:---:|:---:|
 | The teacher's answer | +0.235 | **+0.228** |
-| +4 on the news SKUs | +0.381 | +0.152 |
-| +7 on the news SKUs | **+0.476** | +0.069 |
-| +10 on the news SKUs | +0.419 | -0.043 |
+| +4 on the SKUs named in the insights | +0.381 | +0.152 |
+| +7 on the SKUs named in the insights | **+0.476** | +0.069 |
+| +10 on the SKUs named in the insights | +0.419 | -0.043 |
 | Teacher's answer minus +10 | -0.184 ± 0.289 | **+0.270 ± 0.184** |
 | Best of 0/+2/+4/+7/+10, chosen per day | 0.913 | 0.448 |
 
@@ -104,7 +109,7 @@ GRPO can add on top of the warm start. States from the baseline's play give the 
 picture (teacher's answer minus +10: +0.373 ± 0.202 with the teacher continuing).
 
 The differences between answers are smaller with the teacher continuing (the reference
-answers differ by 0.25 points or more on 34% of news days, against 48%), so more
+answers differ by 0.25 points or more on 34% of days with insights, against 48%), so more
 prompts are dropped by a spread filter and each kept prompt carries less signal.
 
 ## GRPO settings this reward assumes

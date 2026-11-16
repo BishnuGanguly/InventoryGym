@@ -55,10 +55,10 @@ The script checks that Ollama is running and the model exists, then plays the ep
 - the model's first replies, so you can see what it does.
 
 To see what the model did without pasting the whole results file, print a short summary:
-each episode's score and only the days it asked for extra days or had news to read.
+each episode's score and only the days it asked for extra days or had insights to read.
 
 ```bash
-uv run python local_llm/summarize_run.py results/llm_pharma-phi4-mini_news2_test_all_3.jsonl
+uv run python local_llm/summarize_run.py results/llm_pharma-phi4-mini_insights_test_all_3.jsonl
 ```
 
 Results are written to `results/` in the same format as `eval.py`, so you can compare them
@@ -66,34 +66,16 @@ later, e.g. `uv run python eval.py --compare results/llm_pharma-gemma2-2b_test_a
 
 ## What the model answers: adjustment days
 
-By default (`--action adjust`) a simple rule already orders every medicine up to a
-sensible default: enough for its lead time plus 3 safety days. The model answers, for each
-medicine, **how many extra days to keep on top of that default**, from 0 to +10, e.g.
+A simple rule already orders every medicine up to a sensible default: enough for its lead
+time plus 3 safety days. The model answers, for each medicine, **how many extra days to
+keep on top of that default**, from 0 to +10, e.g.
 `{"paracetamol": 4, "vitamins": 0, "insulin": 1}`: more paracetamol because demand is
 rising, the default for vitamins, a little extra insulin because deliveries are slowing.
 
 So a model that answers 0, leaves a medicine out, copies a number from the report or
 writes no JSON at all plays like the baseline (about 0.87), not like an empty warehouse.
 Its score comes from the adjustments it gets right; the oracle reaches about 0.93.
-(Before this, Qwen 2.5 3B in `days` mode copied `days_of_cover` from the report until its
-stock ran out and scored 0.17-0.44, so `days_of_cover` is no longer shown in this mode.)
-
-### Other formats
-
-With `--action days` the model answers with **how many days of stock it wants**, e.g.
-`{"paracetamol": 8, "insulin": 6}`, and the script turns that into an order:
-
-```
-units ordered = days x recent daily demand - on hand - already inbound
-```
-
-One "day of stock" is one day of recent demand: if paracetamol sells about 400 a day,
-8 days means 3,200 units in total, so with 1,000 on hand and 1,200 inbound the order is
-1,000. Days are capped at 21, the storage size. Small models are bad at that arithmetic but reasonable at
-judging "how much cover"; for example, Gemma 2 2B scored 0.24 when it had to write units.
-
-The printout shows both the model's reply and the units sent. With `--action units` the
-model writes units itself.
+The printout shows both the model's reply and the units sent.
 
 ## Other models
 
@@ -123,22 +105,22 @@ On a laptop CPU each call reads a ~1,800-token prompt, so expect anything from s
 seconds (small models) to a minute or more (7B+) per simulated day. Each call may take up
 to `--timeout` seconds (default 600) before it counts as failed.
 
-## News and the hybrid agent
+## Insights and the hybrid agent
 
-With `--news 1` or `--news 2`, disruptions are announced 5–10 days before they start (see
-"News" in the main README). `--agent llm_news` runs the hybrid: the baseline places the
-orders and the model only reads the news and answers with extra safety days per product.
-The model is called only on days with news (about 30–55 of the 60 days), with a short
+With `--insights`, disruptions are announced 5–10 days before they start (see
+"Insights" in the main README). `--agent llm_insights` runs the hybrid: the baseline places the
+orders and the model only reads the insights and answers with extra safety days per product.
+The model is called only on days with insights (about 30–55 of the 60 days), with a short
 prompt, so a run is much faster than `--agent llm`:
 
 ```bash
-uv run python local_llm/run_local_llm.py --model qwen2.5:3b --agent llm_news --news 2 --tasks all --seed 10000
-# -> results/llm_news_pharma-qwen2-5-3b_news2_test_all_seed10000.jsonl
+uv run python local_llm/run_local_llm.py --model qwen2.5:3b --agent llm_insights --insights --tasks all --seed 10000
+# -> results/llm_insights_pharma-qwen2-5-3b_insights_test_all_seed10000.jsonl
 ```
 
-The score table then also shows `baseline_news`, the same hybrid with perfect news reading:
-the target to aim for. Replies on days without news are logged as
-`{}  (no news today: baseline only, model not called)`.
+The score table then also shows `baseline_insights`, the same hybrid with perfect reading of the insights:
+the target to aim for. Replies on days without insights are logged as
+`{}  (no insights today: baseline only, model not called)`.
 
 ## Options
 
@@ -150,10 +132,8 @@ the target to aim for. Replies on days without news are logged as
 | `--episodes` | `1` | Seeds per task (the first N test seeds) |
 | `--seed` | none | Run exactly this one seed per task instead (test seeds 10000–19999, train 0–9999) |
 | `--timeout` | `600` | Seconds allowed per model call |
-| `--agent` | `llm` | `llm`: the model decides every order; `llm_news`: the model reads the news, the baseline orders |
-| `--news` | `0` | Announce disruptions ahead: `0` none, `1` exact template, `2` varied wording |
-| `--random-scenarios` | off | Draw each episode's disrupted SKUs and days from its seed, with 14 days of storage (see the main README); result files get `_rs` in their names |
-| `--action` | `adjust` | `adjust`: extra days (0 to +10) on top of a sensible default per SKU; `days`: days of stock per SKU; `units`: units to order |
+| `--agent` | `llm` | `llm`: the model decides every order; `llm_insights`: the model reads the insights, the baseline orders |
+| `--insights` | off | Announce each disruption 5 to 10 days ahead |
 | `--show` | `10` | How many of the model's replies to print |
 | `--split` | `test` | `train` or `test` seeds |
 | `--base-url` | `http://localhost:11434/v1` | Any OpenAI-compatible server |
@@ -170,11 +150,11 @@ uv run python local_llm/diversity_check.py                          # Phi-4-mini
 uv run python local_llm/diversity_check.py --temperatures 0.7,1.0,1.2
 ```
 
-It picks 3 days where the answer matters (one per task, train seeds, random scenario,
-level-2 news), asks the model 8 times per day at the given temperature, and scores every
+It picks 3 days where the answer matters (one per surprise task, train seeds, with
+insights), asks the model 8 times per day at the given temperature, and scores every
 answer with the GRPO reward (`training/grpo_reward.py`, see `training/REWARD.md`). For each
-day it prints the news, what fixed answers (+0, +2, +4, +7, +10 days for the SKUs in the
-news) would score, the model's answers with their rewards, and how many were different. It
+day it prints the insights, what fixed answers (+0, +2, +4, +7, +10 days for the SKUs in the
+insights) would score, the model's answers with their rewards, and how many were different. It
 ends with a verdict: enough variety for GRPO, too little (try a higher temperature or more
 samples per prompt), or the same answer every time (try a higher temperature, or a short
 supervised fine-tune first). Results go to `results/diversity_<model>.json`.

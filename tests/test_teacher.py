@@ -11,20 +11,20 @@ import eval as E
 import inference
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS
+from tasks import SURPRISE_TASKS, TEST_SEEDS
 from training import episodes as EP
 from training import grpo_reward as G
 from training import probe as P
 from training import teacher as T
 
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(SURPRISE_TASKS)
 LOW, HIGH = inference.ADJUST_DAYS_RANGE
 
 
 def days_of(task="supply_chain_broken", seed=4):
     """(env, obs) on every day of an episode the teacher plays."""
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task, seed=seed, news=2, scenario="random")
+    obs = env.reset(task_name=task, seed=seed, insights=True)
     agent = T.TeacherAgent()
     agent.start_episode(env)
     while not obs.done:
@@ -36,23 +36,23 @@ def days_of(task="supply_chain_broken", seed=4):
 # The teacher's answer
 # ---------------------------------------------------------------------------
 
-def test_answers_are_whole_days_in_range_for_every_sku_and_zero_without_visible_news():
+def test_answers_are_whole_days_in_range_for_every_sku_and_zero_without_visible_insights():
     saw_extra = False
     for env, obs, _ in days_of():
-        events = env._episode_config.news
+        events = env._episode_config.insights
         answer = T.teacher_answer(obs, events, T.normal_lead_times(env))
         assert list(answer) == list(obs.skus)
         assert all(isinstance(v, int) and LOW <= v <= HIGH for v in answer.values())
         visible = {e.sku_id for e in events if e.announce_day <= obs.current_date <= e.end_day}
         assert all(v == 0 for k, v in answer.items() if k not in visible)
-        assert bool(visible) == bool(obs.news)
+        assert bool(visible) == bool(obs.insights)
         saw_extra |= any(answer.values())
     assert saw_extra
 
 
 def test_normal_lead_times_are_the_first_reports():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=1, news=2, scenario="random")
+    obs = env.reset(task_name="surprise_outbreak", seed=1, insights=True)
     assert T.normal_lead_times(env) == {k: s.avg_lead_time for k, s in obs.skus.items()}
 
 
@@ -68,8 +68,8 @@ def test_teacher_agent_sends_what_a_model_giving_its_answer_would_send():
 def test_teacher_beats_the_baseline_and_the_extra_days_rule():
     seeds = list(TEST_SEEDS[:6])
     teacher = st.fmean(r["score"] for r in EP.run_rule_episodes(T.TeacherAgent(), "teacher", TASKS, seeds))
-    rule = st.fmean(E.run_episode("baseline_news", t, s, news=2, scenario="random")["score"] for t in TASKS for s in seeds)
-    baseline = st.fmean(E.run_episode("baseline", t, s, news=2, scenario="random")["score"] for t in TASKS for s in seeds)
+    rule = st.fmean(E.run_episode("baseline_insights", t, s, insights=True)["score"] for t in TASKS for s in seeds)
+    baseline = st.fmean(E.run_episode("baseline", t, s, insights=True)["score"] for t in TASKS for s in seeds)
     assert teacher > rule > baseline
 
 
@@ -91,17 +91,17 @@ def test_examples_are_the_models_prompt_with_the_teachers_answer(rows):
         prompt = G.DayPrompt(row["task"], row["seed"], row["day"], states=row["states"])
         assert [system, user] == G.prompt_messages(prompt)                    # exactly what GRPO and eval send
         env, obs, _ = G.build_state(prompt)
-        assert json.loads(assistant["content"]) == T.teacher_answer(obs, env._episode_config.news, T.normal_lead_times(env))
+        assert json.loads(assistant["content"]) == T.teacher_answer(obs, env._episode_config.insights, T.normal_lead_times(env))
 
 
-def test_every_news_day_is_kept_and_a_share_of_the_quiet_days(rows):
-    news_days = len(G.news_day_prompts(["supply_chain_broken", "flu_season"], [3, 5]))        # baseline-played seeds
-    assert sum(r["has_news"] and r["states"] == "baseline" for r in rows) == news_days
-    quiet = [r for r in rows if not r["has_news"]]
+def test_every_insights_day_is_kept_and_a_share_of_the_quiet_days(rows):
+    insights_days = len(G.insights_day_prompts(["supply_chain_broken", "flu_season"], [3, 5]))        # baseline-played seeds
+    assert sum(r["has_insights"] and r["states"] == "baseline" for r in rows) == insights_days
+    quiet = [r for r in rows if not r["has_insights"]]
     assert quiet and all(not any(json.loads(r["messages"][-1]["content"]).values()) for r in quiet)
     none = T.sft_examples(["flu_season"], [2], quiet_share=0.0)
     every = T.sft_examples(["flu_season"], [2], quiet_share=1.0)
-    assert all(r["has_news"] for r in none) and len(every) == 60 and len(none) < len(every)
+    assert all(r["has_insights"] for r in none) and len(every) == 60 and len(none) < len(every)
     assert T.sft_examples(["flu_season"], [2]) == T.sft_examples(["flu_season"], [2])          # deterministic
 
 
@@ -111,13 +111,13 @@ def test_states_option_and_label_stats(rows):
     with pytest.raises(ValueError, match="states must be"):
         T.sft_examples(["flu_season"], [3], states="model")
     stats = T.label_stats(rows)
-    assert stats["examples"] == len(rows) and stats["with_news"] == sum(r["has_news"] for r in rows)
-    assert 0 < stats["all_zero_with_news"] < stats["with_news"]
+    assert stats["examples"] == len(rows) and stats["with_insights"] == sum(r["has_insights"] for r in rows)
+    assert 0 < stats["all_zero_with_insights"] < stats["with_insights"]
     assert all(LOW < v <= HIGH for v in stats["nonzero_values"])
 
 
 def test_examples_only_come_from_train_seeds_outside_the_probe():
-    assert T.PROBE_SEEDS == P.PROBE_SEEDS and (T.SCENARIO, T.NEWS_LEVEL) == (G.SCENARIO, G.NEWS_LEVEL)
+    assert T.PROBE_SEEDS == P.PROBE_SEEDS and T.INSIGHTS == G.INSIGHTS
     for bad in ([TEST_SEEDS[0]], [P.PROBE_SEEDS[0]], [-1]):
         with pytest.raises(ValueError, match="train seeds outside the probe seeds"):
             T.sft_examples(["flu_season"], bad)
@@ -172,7 +172,7 @@ def test_encode_example_trains_on_the_answer_only(rows):
 # ---------------------------------------------------------------------------
 
 def test_prompts_can_come_from_the_teachers_play():
-    by_teacher = G.news_day_prompts(["supply_chain_broken"], [4], states="teacher")
+    by_teacher = G.insights_day_prompts(["supply_chain_broken"], [4], states="teacher")
     assert by_teacher and {p.states for p in by_teacher} == {"teacher"}
     last = by_teacher[-1]
     _, obs_t, hist_t = G.build_state(last)
@@ -181,11 +181,11 @@ def test_prompts_can_come_from_the_teachers_play():
     assert [h[1] for h in hist_t] != [h[1] for h in hist_b]                   # different orders were placed
     assert G.dataset_rows([last])[0]["states"] == "teacher"
     with pytest.raises(ValueError, match="player must be one of"):
-        G.news_day_prompts(["flu_season"], [1], states="oracle")
+        G.insights_day_prompts(["flu_season"], [1], states="oracle")
 
 
 def test_reward_reads_the_states_column_and_defaults_to_the_baseline():
-    prompt = G.news_day_prompts(["supply_chain_broken"], [4], states="teacher")[5]
+    prompt = G.insights_day_prompts(["supply_chain_broken"], [4], states="teacher")[5]
     reward = G.GRPOReward()
     text = json.dumps({"insulin": 4, "paracetamol": 4, "bp_medication": 4, "vitamins": 4, "hydroxychloroquine": 4})
     with_column = reward([text], task=[prompt.task], seed=[prompt.seed], day=[prompt.day], states=["teacher"])
@@ -197,7 +197,7 @@ def test_reward_reads_the_states_column_and_defaults_to_the_baseline():
 def test_continuation_is_validated_and_the_default_is_unchanged():
     with pytest.raises(ValueError, match="continuation must be one of"):
         G.GRPOReward(continuation="oracle")
-    prompt = G.news_day_prompts(["flu_season"], [7])[10]
+    prompt = G.insights_day_prompts(["flu_season"], [7])[10]
     env, obs, _ = G.build_state(prompt)
     extra = {"paracetamol": 5.0}
     assert G.score(env, obs, prompt, extra) == G.score(env, obs, prompt, extra, continuation="baseline")
@@ -206,15 +206,15 @@ def test_continuation_is_validated_and_the_default_is_unchanged():
 
 def test_with_the_teacher_playing_on_its_own_answer_beats_stockpiling():
     # Judged as one step of good play (the teacher continues), the teacher's answer beats
-    # +10 on the news SKUs; and +10 earns more when the baseline continues, since then
+    # +10 on the SKUs named in the insights; and +10 earns more when the baseline continues, since then
     # nobody else will prepare. (On 300 days: +0.27 +- 0.18 and +0.46 +- 0.22 points.)
-    prompts = [p for t in TASKS for p in G.news_day_prompts([t], range(20, 32), states="teacher")[::7]]
+    prompts = [p for t in TASKS for p in G.insights_day_prompts([t], range(20, 32), states="teacher")[::7]]
     then_teacher, then_baseline = G.GRPOReward(continuation="teacher"), G.GRPOReward()
     teacher, plus10, plus10_baseline = [], [], []
     for p in prompts:
         env, obs, _ = G.build_state(p)
-        answer = T.answer_text(T.teacher_answer(obs, env._episode_config.news, T.normal_lead_times(env)))
-        flat = json.dumps({k: 10 for k in P.news_skus(p)})
+        answer = T.answer_text(T.teacher_answer(obs, env._episode_config.insights, T.normal_lead_times(env)))
+        flat = json.dumps({k: 10 for k in P.insights_skus(p)})
         teacher.append(then_teacher.score_answer(p, answer)["reward"])
         plus10.append(then_teacher.score_answer(p, flat)["reward"])
         plus10_baseline.append(then_baseline.score_answer(p, flat)["reward"])

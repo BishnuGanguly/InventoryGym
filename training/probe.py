@@ -1,7 +1,7 @@
 """
-The probe exam: a fixed set of news days the model answers greedily, scored with the
+The probe exam: a fixed set of days with insights the model answers greedily, scored with the
 GRPO reward. Run it before, during and after training to see whether the model gets
-better at reading the news.
+better at reading the insights.
 
     items = build_probe(seeds=range(9000, 9100), count=100)       # held out from training
     texts = my_generate([i.messages for i in items])              # one answer per item
@@ -21,24 +21,24 @@ from dataclasses import dataclass
 from random import Random
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from tasks import TASK_REGISTRY
+from tasks import SURPRISE_TASKS
 from training.teacher import answer_text, normal_lead_times, teacher_answer
 from training.grpo_reward import (PENALTY_NO_JSON, PENALTY_OUT_OF_RANGE, DayPrompt, GRPOReward, build_state,
-                                  news_day_prompts, prompt_messages)
+                                  insights_day_prompts, prompt_messages)
 
 PROBE_SEEDS = range(9000, 9100)    # train-split seeds kept out of training, for the exam during training
-REFERENCE_DAYS = (0, 2, 4, 7, 10)  # answers tried on a prompt's news SKUs: the best of them is "best achievable"
+REFERENCE_DAYS = (0, 2, 4, 7, 10)  # answers tried on a prompt's SKUs named in the insights: the best of them is "best achievable"
 
 
-def news_skus(prompt: DayPrompt) -> List[str]:
-    """The SKUs named by the news visible on that day."""
+def insights_skus(prompt: DayPrompt) -> List[str]:
+    """The SKUs named by the insights visible on that day."""
     env, _, _ = build_state(prompt)
-    return sorted({e.sku_id for e in env._episode_config.news if e.announce_day <= prompt.day <= e.end_day})
+    return sorted({e.sku_id for e in env._episode_config.insights if e.announce_day <= prompt.day <= e.end_day})
 
 
 def reference_rewards(reward: GRPOReward, prompt: DayPrompt, skus: Optional[List[str]] = None) -> Dict[int, float]:
-    """The reward of answering 0, +2, +4, +7 and +10 days for the SKUs in the news."""
-    skus = news_skus(prompt) if skus is None else skus
+    """The reward of answering 0, +2, +4, +7 and +10 days for the SKUs in the insights."""
+    skus = insights_skus(prompt) if skus is None else skus
     return {v: reward.score_answer(prompt, json.dumps({k: v for k in skus}))["reward"] for v in REFERENCE_DAYS}
 
 
@@ -46,7 +46,7 @@ def reference_rewards(reward: GRPOReward, prompt: DayPrompt, skus: Optional[List
 class ProbeItem:
     prompt: DayPrompt
     messages: List[Dict[str, str]]
-    skus: List[str]                 # SKUs in the news that day
+    skus: List[str]                 # SKUs in the insights that day
     reference: Dict[int, float]     # reward of +0/+2/+4/+7/+10 on those SKUs
 
     @property
@@ -63,14 +63,14 @@ class ProbeItem:
 def build_probe(seeds: Iterable[int] = PROBE_SEEDS, count: int = 100, reward: Optional[GRPOReward] = None,
                 tasks: Optional[Sequence[str]] = None, salt: str = "probe", states: str = "baseline") -> List[ProbeItem]:
     """
-    `count` news days drawn evenly from the tasks of these episodes (deterministic),
+    `count` days with insights drawn evenly from the tasks of these episodes (deterministic),
     with `states` (the baseline or the teacher) playing up to each day. The reference
     answers are scored with `reward`, so pass the reward the model is trained with.
     """
     reward = reward or GRPOReward()
-    tasks = sorted(tasks or TASK_REGISTRY)
+    tasks = sorted(tasks or SURPRISE_TASKS)
     seeds = list(seeds)
-    per_task = [news_day_prompts([t], seeds, states=states) for t in tasks]
+    per_task = [insights_day_prompts([t], seeds, states=states) for t in tasks]
     picked: List[DayPrompt] = []
     for i, prompts in enumerate(per_task):
         want = count // len(tasks) + (i < count % len(tasks))
@@ -78,7 +78,7 @@ def build_probe(seeds: Iterable[int] = PROBE_SEEDS, count: int = 100, reward: Op
                          key=lambda p: (p.seed, p.day))
     items = []
     for p in picked:
-        skus = news_skus(p)
+        skus = insights_skus(p)
         items.append(ProbeItem(p, prompt_messages(p), skus, reference_rewards(reward, p, skus)))
     return items
 
@@ -88,7 +88,7 @@ def teacher_texts(items: Sequence[ProbeItem]) -> List[str]:
     texts = []
     for item in items:
         env, obs, _ = build_state(item.prompt)
-        texts.append(answer_text(teacher_answer(obs, env._episode_config.news, normal_lead_times(env))))
+        texts.append(answer_text(teacher_answer(obs, env._episode_config.insights, normal_lead_times(env))))
     return texts
 
 
@@ -127,8 +127,8 @@ def summarize_probe(items: Sequence[ProbeItem], results: Sequence[Dict[str, Any]
     """
     reward: mean reward per answer (points; answering 0 everywhere scores 0).
     pct_of_best: total reward / total best achievable reward, in %.
-    right_product: answers adding days whose largest extra is on a SKU in the news.
-    insulin_habit: days without insulin news where insulin got extra days.
+    right_product: answers adding days whose largest extra is on a SKU in the insights.
+    insulin_habit: days without insulin insights where insulin got extra days.
     held_back: days where every +N loses, answered with 0.
     """
     best = sum(i.best for i in items)

@@ -186,7 +186,7 @@ def test_notebook_runs_end_to_end_with_stand_ins(monkeypatch, tmp_path, capsys, 
     assert "==== VERDICT ====" in out and "trained - teacher" in out
     summary = json.loads((tmp_path / "grpo_run" / "summary.json").read_text())
     assert summary["warm_start"] is warm_start and summary["player"] == player
-    assert {"teacher", "news_plan", "baseline", "oracle"} <= set(summary["mean_scores"])
+    assert {"teacher", "insights_plan", "baseline", "oracle"} <= set(summary["mean_scores"])
     assert (tmp_path / "grpo_results.zip").exists()
     if warm_start:
         assert len(ns["sft_encoded"]) == SMALL["SFT_EXAMPLES"] and summary["sft"]["examples"] == SMALL["SFT_EXAMPLES"]

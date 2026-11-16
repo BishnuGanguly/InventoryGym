@@ -18,7 +18,7 @@ from models import (
     SKUState,
     StoragePoolState,
 )
-from news import visible_news
+from insights import visible_insights
 from tasks import compute_step_reward, get_task_config
 from version import __version__
 from world import World, load_world
@@ -30,7 +30,7 @@ from world import World, load_world
 
 DESCRIPTION = (
     "An inventory-management environment for LLM agents. Every day the agent reads a stock report, and "
-    "optionally news about coming supplier delays and demand surges, and decides how much of each product to "
+    "optionally insights about coming supplier delays and demand surges, and decides how much of each product to "
     "order. The products, storage areas and disruptions come from a world file, so the same environment runs "
     "a pharmaceutical warehouse, a grocery store or your own inventory. Episodes are fixed by their seed."
 )
@@ -78,8 +78,7 @@ class InventoryEnvironment(Environment):
         episode_id: Optional[str] = None,
         episode_config: Optional[Union[EpisodeConfig, Dict[str, Any]]] = None,
         task_name: Optional[str] = None,
-        news: int = 0,
-        scenario: str = "fixed",
+        insights: bool = False,
         world: Optional[Union[World, Dict[str, Any], str]] = None,
         **kwargs: Any,
     ) -> InventoryState:
@@ -88,9 +87,8 @@ class InventoryEnvironment(Environment):
 
         The episode is chosen, in order of precedence, from:
           - episode_config: an EpisodeConfig or its dict form (as sent over HTTP/WS)
-          - task_name:      a task of `world`, built with `seed`, the news level
-                            `news` (0 none, 1 exact, 2 varied; see news.py) and
-                            `scenario` ("fixed" tasks or "random" SKUs and days)
+          - task_name:      a task of `world`, built with `seed`, `insights` (True:
+                            disruptions are announced a few days ahead; see insights.py)
           - world alone:    the world's first task, built the same way
           - the built-in default config
 
@@ -99,6 +97,7 @@ class InventoryEnvironment(Environment):
         not accepted here, since reset() can be called over the network: load a file
         with world.load_world() and pass the World.
         """
+        insights = bool(insights)          # over HTTP it may arrive as 0 / 1
         self._rng = Random(seed)
         self._episode_id = episode_id or str(uuid.uuid4())
         self._step_count = 0
@@ -109,13 +108,13 @@ class InventoryEnvironment(Environment):
             world_obj = load_world(world, allow_files=False) if world is not None else None
             if task_name is None:
                 task_name = world_obj.task_names[0]
-            self._episode_config = get_task_config(task_name, seed, news=news, scenario=scenario, world=world_obj)
+            self._episode_config = get_task_config(task_name, seed, insights=insights, world=world_obj)
         else:
             self._episode_config = self._default_episode_config()
         self._draw_world_noise()
         self._inventory_state = self._build_initial_state()
+        self._update_averages()
         self._update_insights()
-        self._update_news()
         return self._inventory_state
 
     def _draw_world_noise(self) -> None:
@@ -292,15 +291,15 @@ class InventoryEnvironment(Environment):
         for sku_id, _, order_day, arrival_day in sorted(arriving, key=lambda o: o[2]):
             ts.lead_time_history[sku_id].append(float(arrival_day - order_day))
 
-        # 10. Recalculate insights
-        self._update_insights()
+        # 10. Recalculate the averages the agent sees
+        self._update_averages()
 
         # 11. Recompute storage usage and advance date
         self._recompute_storage()
         ts.current_date += 1
         if ts.current_date >= cfg.no_of_days:
             ts.done = True
-        self._update_news()
+        self._update_insights()
 
     # -----------------------------------------------------------------------
     # True demand
@@ -488,10 +487,10 @@ class InventoryEnvironment(Environment):
             ts.expected_inbound_orders.append((sku_id, qty, day + round(avg_lt)))
 
     # -----------------------------------------------------------------------
-    # Insights
+    # Averages derived from what the agent has observed
     # -----------------------------------------------------------------------
 
-    def _update_insights(self) -> None:
+    def _update_averages(self) -> None:
         ts = self._inventory_state
         for sku_id, sku in ts.skus.items():
             demand_hist = ts.demand_history.get(sku_id, [])
@@ -508,10 +507,10 @@ class InventoryEnvironment(Environment):
                 if sku.avg_demand_per_day > 0 else 999.0
             )
 
-    def _update_news(self) -> None:
-        """Show the news published so far whose event is not over yet."""
+    def _update_insights(self) -> None:
+        """Show the insights published so far whose event is not over yet."""
         ts = self._inventory_state
-        ts.news = visible_news(self._episode_config, ts.current_date)
+        ts.insights = visible_insights(self._episode_config, ts.current_date)
 
     # -----------------------------------------------------------------------
     # Storage recompute
@@ -554,7 +553,7 @@ class InventoryEnvironment(Environment):
             return inference.SYSTEM_PROMPT + "\n\nNo state available. Call reset() first."
         report = inference.observation_to_dict(self._inventory_state)
         user_prompt = inference.build_user_prompt(report, [], step=self._inventory_state.current_date + 1)
-        return inference.system_prompt("units", self._inventory_state) + "\n\n" + user_prompt
+        return inference.system_prompt(self._inventory_state) + "\n\n" + user_prompt
 
     # -----------------------------------------------------------------------
     # Default episode config

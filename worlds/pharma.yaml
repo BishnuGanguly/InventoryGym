@@ -11,9 +11,9 @@ name: pharma
 description: >
   A pharmaceutical warehouse with a refrigerated pool for insulin and an ambient pool
   for everything else, facing supplier delays and epidemic demand waves.
-# The built-in pharma world keeps its original prompt and news wording, which trained
-# models rely on. The words below (business, product names, news causes) are what a
-# changed copy of this file starts from: any other world's prompts and news are written
+# The built-in pharma world keeps its original prompt and insights wording, which trained
+# models rely on. The words below (business, product names, insight causes) are what a
+# changed copy of this file starts from: any other world's prompts and insights are written
 # from these fields.
 business: a pharmaceutical warehouse
 days: 60
@@ -76,7 +76,7 @@ products:
     stockout_penalty: 35
     waste_penalty: 4
 
-news:
+insights:
   delay_causes:
     - a port strike
     - a fire at a manufacturing plant
@@ -119,3 +119,41 @@ tasks:
       - {type: demand_wave,    product: insulin,            peak_day: 20, amplitude: [0.1, 0.2], width: 10}
       - {type: supplier_delay, product: hydroxychloroquine, start_day: 17, end_day: 27, multiplier: [2.0, 5.0]}
       - {type: supplier_delay, product: insulin,            start_day: 20, end_day: 30, multiplier: [1.0, 3.0]}
+
+  # The three tasks above disrupt the same products on the same days in every episode, so
+  # a fixed timetable can stand in for understanding. The three below draw the products
+  # and the days per seed and have less storage (14 days instead of 21), so keeping extra
+  # stock of everything stops being free. They are the tasks to train and to compare on.
+  surprise_delays:
+    description: >
+      Flat demand; two different products, drawn per seed, each have a supplier delay of
+      9 to 13 days, the first starting on day 10-20 and the second on day 26-45.
+    draw: {first: any, second: any}
+    storage_days: {cold: 14, ambient: 14}
+    events:
+      - {type: supplier_delay, product: first,  start_day: [10, 20], duration: [9, 13], multiplier: [2.0, 5.0]}
+      - {type: supplier_delay, product: second, start_day: [26, 45], duration: [9, 13], multiplier: [2.0, 5.0]}
+
+  surprise_outbreak:
+    description: >
+      A demand wave hits one product drawn per seed, peaking on day 30-38 at 2.5 to 3.5
+      times normal, while its supplier slows down for 11 days around the peak.
+    draw: {hit: any}
+    storage_days: {cold: 14, ambient: 14}
+    events:
+      - {type: demand_wave,    product: hit, peak_day: [30, 38], amplitude: [1.5, 2.5], width: [8.0, 12.0]}
+      - {type: supplier_delay, product: hit, start_day: [28, 38], duration: 11, multiplier: [2.0, 5.0]}
+
+  surprise_epidemic:
+    description: >
+      Two waves of demand for one product drawn per seed (the first peaks on day 13-20,
+      the second and larger on day 46-52) with a supplier delay during the first, and a
+      mild rise and a delay for a second product. Do not relax in the trough.
+    draw: {primary: any, secondary: any}
+    storage_days: {cold: 14, ambient: 14}
+    events:
+      - {type: demand_wave,    product: primary,   peak_day: [13, 20], amplitude: 1.8, width: 6.0}
+      - {type: demand_wave,    product: primary,   peak_day: [46, 52], amplitude: 2.5, width: 6.0}
+      - {type: demand_wave,    product: secondary, peak_day: [16, 23], amplitude: [0.1, 0.2], width: 10}
+      - {type: supplier_delay, product: primary,   start_day: [13, 20], duration: 11, multiplier: [2.0, 5.0]}
+      - {type: supplier_delay, product: secondary, start_day: [16, 23], duration: 11, multiplier: [1.0, 3.0]}

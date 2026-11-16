@@ -54,7 +54,7 @@ The environment draws all of this noise once, at `reset`, from the seed. The sam
 
 ## Tasks
 
-Three scenario types. All episodes run 60 days. Base demand and lead times are randomised at episode start within the ranges in the SKU table.
+Three fixed tasks, then three surprise tasks. All episodes run 60 days. Base demand and lead times are randomised at episode start within the ranges in the SKU table.
 
 ### Task 1 — Supply Chain Broken (`supply_chain_broken`)
 
@@ -94,29 +94,34 @@ The trough between waves (days 27–40) is a trap: demand is low but the agent m
 
 ![Epidemic Two Wave — HCQ Demand](../plots/task3_epidemic.png)
 
-### Scenarios: fixed or random
+### Surprise tasks: products and days drawn per seed
 
-By default (`scenario="fixed"`) every seed disrupts the same SKUs on the same days; only the size of each disruption changes. The **random scenario** (`scenario="random"` in `env.reset` / `get_task_config`, `--random-scenarios` in `eval.py` and `local_llm/run_local_llm.py`) draws per seed which SKUs are disrupted and when, and gives each storage pool **14 days** of demand instead of 21:
+The three tasks above disrupt the same SKUs on the same days for every seed; only the size of each disruption changes. Three more tasks draw, per seed, which SKUs are disrupted and when, and give each storage pool **14 days** of demand instead of 21. They are ordinary tasks of the world file ([`worlds/pharma.yaml`](../worlds/pharma.yaml)), written with `draw` and day ranges like any other world's ([World files](world-files.md)):
 
-| Task | Fixed | Random scenario |
-|---|---|---|
-| Supply Chain Broken | insulin delay days 15–25; paracetamol delay 30–40 | two different SKUs drawn from all five; the first delay starts on day 10–20 and lasts 9–13 days, the second starts 3–10 days after it ends and lasts 9–13 days |
-| Flu Season | paracetamol: demand peak day 30 (2× extra, width 10), delay days 30–40 | one SKU drawn from all five: peak on day 24–38 at 1.5–2.5× extra, width 8–12 (never 1.5× normal before day 8); its delay starts within 3 days of the peak and lasts 11 days |
-| Epidemic Two Waves | HCQ waves peak on days 17 and 45; HCQ delay 17–27; insulin bump and delay 20–30 | the two SKUs drawn from all five; wave 1 peaks on day 13–23, wave 2 26–32 days later (by day 52; closer waves merge into one); the delays keep their place relative to wave 1, ±2 days |
+| Task | What happens |
+|---|---|
+| `surprise_delays` | two different SKUs drawn from all five each have a supplier delay of 9–13 days; the first starts on day 10–20, the second on day 26–45 |
+| `surprise_outbreak` | one SKU drawn from all five: a demand wave peaking on day 30–38 at 2.5–3.5× normal (width 8–12), and a supplier delay of 11 days starting on day 28–38 |
+| `surprise_epidemic` | two SKUs drawn from all five: for the first, waves peaking on day 13–20 and day 46–52 (the second larger) and a delay of 11 days starting on day 13–20; for the second, a mild rise and a delay around day 16–23 |
 
-The scenario has its own random generator, so base demand, lead times, starting stock, daily noise and the size of each disruption are the same for a seed in both scenarios. News follows the drawn SKUs and days. The report shows `cold_days` / `ambient_days`, how many days of current demand each pool can hold, and the prompts refer to them instead of a fixed 21 days. Result files from the random scenario get `_rs` in their names.
+```bash
+uv run python eval.py --agent insights_plan --insights --tasks surprise_delays,surprise_outbreak,surprise_epidemic --episodes 50
+```
 
-**Why it exists.** In the fixed tasks the right response to the news is almost a fixed timetable: averaging perfect news reading (`news_extra_days` on the exact events) per task, day and SKU over 200 train seeds, and playing that calendar without reading anything, earned 94% of the gain of perfect news reading. Drawing only the days did not help (98%): the shortcut is mainly *which SKU* each task disrupts, and with 21 days of storage stockpiling it is nearly free (+7 days of the usual at-risk SKUs every day earned 80%). Measured on 50 test seeds per task with level-2 news:
+Insights follow the drawn SKUs and days. The report shows `cold_days` / `ambient_days`, how many days of current demand each pool can hold, and the prompt refers to them instead of a fixed 21 days. Training and the teacher use these tasks by default (`tasks.SURPRISE_TASKS`).
 
-| Agent | Fixed | Random scenario |
+**Why they exist.** In the fixed tasks the right response to the insights is almost a fixed timetable. Averaging what a perfect reader does per task, day and SKU over 200 train seeds, and playing that calendar without reading anything, earned 94% of the reader's gain. The shortcut is mainly *which SKU* each task disrupts, and with 21 days of storage stockpiling it is nearly free. Drawing the SKUs and the days removes the calendar, and less storage makes stockpiling everything cost something. Measured on 50 test seeds per task with insights:
+
+| Agent | Fixed tasks | Surprise tasks |
 |---|:---:|:---:|
-| Baseline | 0.867 | 0.859 |
-| Calendar per task, day and SKU (no reading) | 0.900 | 0.868 |
-| +3 days on every SKU (no reading) | 0.886 | 0.869 |
-| Perfect news reading, extra-days rule (`baseline_news`) | 0.902 | 0.877 |
-| Perfect news reading, inventory plan (`news_plan`) | 0.909 | 0.892 |
-| Oracle | 0.931 | 0.925 |
+| Baseline | 0.867 | 0.871 |
+| +3 days on every SKU (no reading) | 0.886 | 0.879 |
+| Extra-days rule on the exact events (`baseline_insights`) | 0.903 | 0.888 |
+| Inventory plan from the exact events (`insights_plan`) | 0.909 | 0.898 |
+| Oracle | 0.931 | 0.927 |
 | **Extra-days rule minus "+3 days on every SKU"** | +0.017 ± 0.003, but a calendar reproduces it | **+0.008 ± 0.003** |
-| **Inventory plan minus "+3 days on every SKU"** | +0.023 ± 0.004 | **+0.023 ± 0.004** |
+| **Inventory plan minus "+3 days on every SKU"** | +0.023 ± 0.004 | **+0.018 ± 0.004** |
 
-In the random scenario the calendar earns 50% of the extra-days rule's gain instead of 94%, and what reading adds over the best fixed habit cannot be had without reading. With the extra-days rule that margin is small: it closes only 27% of the gap to the oracle here (it ignores storage, and on flu_season it adds nothing over the habit). The weakness is the rule, not the news: the inventory plan (`news_plan`, see [News](results.md#news-disruptions-announced-ahead-of-time)) reads the same published events and closes 50% of the gap, three times the margin over the best habit (+0.023 against +0.008), while wasting far fewer units (311 per episode against 1,763). It is the reference to aim for, and the better teacher. Of the storage sizes tried (21, 17, 14 days), 14 gave reading the largest margin over the best habit.
+On the surprise tasks the inventory plan (`insights_plan`, see [Insights](results.md#insights-disruptions-announced-ahead-of-time)) closes 47% of the gap between the baseline and the oracle, and the extra-days rule 30%. The plan is the reference to aim for, and the better teacher.
+
+These tasks replace an earlier "random scenario" option that was written in code for the pharma world only. They follow the same design with slightly different ranges, so their episodes, and the numbers above, are not the ones measured before.
