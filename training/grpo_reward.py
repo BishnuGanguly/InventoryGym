@@ -94,8 +94,8 @@ def prompt_messages(prompt: DayPrompt) -> List[Dict[str, str]]:
     """The chat messages agents.LLMAgent sends on that day in the `adjust` format."""
     _, obs, history = build_state(prompt)
     report = inference.observation_to_dict(obs, include_cover=False)
-    user = inference.build_user_prompt(report, history, step=obs.current_date + 1, action="adjust")
-    return [{"role": "system", "content": inference.system_prompt("adjust", obs)},
+    user = inference.build_user_prompt(report, history, step=obs.current_date + 1)
+    return [{"role": "system", "content": inference.system_prompt(obs)},
             {"role": "user", "content": user}]
 
 

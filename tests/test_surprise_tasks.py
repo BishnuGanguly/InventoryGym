@@ -98,7 +98,7 @@ def test_report_shows_how_many_days_each_pool_holds():
 
 
 def test_the_prompt_points_to_the_reported_storage_days():
-    prompt = inference.SYSTEM_PROMPT_ADJUST
+    prompt = inference.SYSTEM_PROMPT
     assert "holds only about 21 days" not in prompt and "cold_days / ambient_days" in prompt
 
 

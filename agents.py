@@ -433,13 +433,10 @@ class LLMAgent(Agent):
     """
     One chat call per day, with the prompt and history format from inference.py.
 
-    action="adjust" (default): the baseline rule orders a default (lead time + 3 safety
-    days) and the model answers only with extra days per SKU (0 to +10), so a
-    copied number, a 0 or a missing SKU plays like the baseline instead of emptying the
-    shelf. days_of_cover is left out of the report, since small models copied it.
-    action="days": the model answers with days of stock wanted per SKU, and
-    inference.days_to_units() converts that into units before the order is sent.
-    action="units": the model writes units directly (the benchmark's native format).
+    The baseline rule orders a default (lead time + 3 safety days) and the model answers
+    only with extra days per SKU (0 to +10), so a copied number, a 0 or a missing SKU
+    plays like the baseline instead of emptying the shelf. days_of_cover is left out of
+    the report, since small models copied it.
 
     `last_model_reply` keeps the model's own text for logging; act() returns the order
     actually sent to the environment.
@@ -452,29 +449,26 @@ class LLMAgent(Agent):
         base_url: str,
         client: Any = None,
         timeout: float = 60.0,
-        action: str = "adjust",
     ) -> None:
         """timeout: seconds per call. Raise it for large models on a CPU, where one call can take minutes."""
-        if action not in inference.ACTION_FORMATS:
-            raise ValueError(f"action must be one of {inference.ACTION_FORMATS}, not {action!r}")
         if client is None:
             from openai import OpenAI
 
             client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout, max_retries=1)
         self.client = client
         self.model = model
-        self.action = action
+        self.action = "adjust"          # recorded with every episode
         self.last_model_reply = ""
 
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
-        obs_dict = inference.observation_to_dict(obs, include_cover=self.action != "adjust")
-        user_prompt = inference.build_user_prompt(obs_dict, history, step=obs.current_date + 1, action=self.action)
+        obs_dict = inference.observation_to_dict(obs, include_cover=False)
+        user_prompt = inference.build_user_prompt(obs_dict, history, step=obs.current_date + 1)
         self.last_model_reply = ""
         try:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": inference.system_prompt(self.action, obs)},
+                    {"role": "system", "content": inference.system_prompt(obs)},
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=inference.TEMPERATURE,
@@ -482,13 +476,8 @@ class LLMAgent(Agent):
             )
             text = (completion.choices[0].message.content or "").strip()
         except Exception as exc:
-            # In "adjust" mode a failed call still orders the default; otherwise nothing.
-            fallback = json.dumps(baseline_policy(obs)) if self.action == "adjust" else "{}"
-            return fallback, f"{type(exc).__name__}: {exc}"
+            # A failed call still orders the default.
+            return json.dumps(baseline_policy(obs)), f"{type(exc).__name__}: {exc}"
         self.last_model_reply = text
-        if self.action == "adjust":
-            extra = inference.adjust_days(obs, inference.parse_json_object(text))
-            return json.dumps(baseline_policy(obs, extra_days=extra, min_extra=inference.ADJUST_DAYS_RANGE[0])), None
-        if self.action == "days":
-            return json.dumps(inference.days_to_units(obs, inference.parse_json_object(text))), None
-        return text or "{}", None
+        extra = inference.adjust_days(obs, inference.parse_json_object(text))
+        return json.dumps(baseline_policy(obs, extra_days=extra, min_extra=inference.ADJUST_DAYS_RANGE[0])), None

@@ -436,7 +436,7 @@ def make_agent(label: str, model: str = "", token: str = "") -> Any:
     if label in RULE_AGENTS:
         return RULE_AGENTS[label]()
     if label == AGENT_LLM:
-        return LLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL, action="adjust")
+        return LLMAgent(model=model, api_key=token, base_url=inference.API_BASE_URL)
     raise ValueError(f"unknown agent {label!r}")
 
 

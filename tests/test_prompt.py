@@ -35,7 +35,7 @@ def test_instructions_contain_no_example_quantities():
     assert not SKU_WITH_NUMBER.search(inference.SYSTEM_PROMPT)
     _, obs, history = _played(5)
     user = inference.build_user_prompt(inference.observation_to_dict(obs), history, step=6)
-    instructions = user[user.index("--- YOUR PROCUREMENT DECISION ---"):]
+    instructions = user[user.index("--- YOUR DECISION ---"):]
     assert not SKU_WITH_NUMBER.search(instructions)
 
 

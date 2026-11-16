@@ -58,7 +58,7 @@ def test_every_prompt_says_shortages_are_weighted_by_stockout_penalty():
 
     from test_prompt import SKU_WITH_NUMBER
 
-    for prompt in (inference.SYSTEM_PROMPT, inference.SYSTEM_PROMPT_DAYS, inference.SYSTEM_PROMPT_ADJUST):
+    for prompt in (inference.SYSTEM_PROMPT,):
         assert "Shortages are weighted by stockout_penalty in your score" in prompt
         assert not SKU_WITH_NUMBER.search(prompt)
     assert "weighted by stockout_penalty" in inference.INSIGHTS_SYSTEM_PROMPT

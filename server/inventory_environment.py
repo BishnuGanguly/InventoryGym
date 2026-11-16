@@ -553,7 +553,7 @@ class InventoryEnvironment(Environment):
             return inference.SYSTEM_PROMPT + "\n\nNo state available. Call reset() first."
         report = inference.observation_to_dict(self._inventory_state)
         user_prompt = inference.build_user_prompt(report, [], step=self._inventory_state.current_date + 1)
-        return inference.system_prompt("units", self._inventory_state) + "\n\n" + user_prompt
+        return inference.system_prompt(self._inventory_state) + "\n\n" + user_prompt
 
     # -----------------------------------------------------------------------
     # Default episode config

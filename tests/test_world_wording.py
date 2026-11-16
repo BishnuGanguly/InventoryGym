@@ -19,7 +19,6 @@ from world import WorldError, build_episode, load_world
 ROOT = Path(__file__).resolve().parent.parent
 GROCERY = load_world(ROOT / "examples" / "worlds" / "grocery.yaml")
 PHARMA_WORDS = ("insulin", "pharma", "prescription", "paracetamol", "hydroxychloroquine")
-ACTIONS = ("units", "days", "adjust")
 
 
 def grocery_data():
@@ -144,17 +143,14 @@ def test_a_worlds_own_wording_draws_the_same_random_numbers():
 
 def test_pharma_prompts_are_the_original_constants():
     obs = InventoryEnvironment().reset(task_name="flu_season", seed=1, insights=True)
-    assert inference.system_prompt("units", obs) == inference.system_prompt("units") == inference.SYSTEM_PROMPT
-    assert inference.system_prompt("days", obs) == inference.SYSTEM_PROMPT_DAYS
-    assert inference.system_prompt("adjust", obs) == inference.SYSTEM_PROMPT_ADJUST
+    assert inference.system_prompt(obs) == inference.system_prompt() == inference.SYSTEM_PROMPT
     assert inference.insights_system_prompt(obs) == inference.insights_system_prompt() == inference.INSIGHTS_SYSTEM_PROMPT
     assert inference.sku_aliases(obs) is inference.SKU_ALIASES
 
 
-@pytest.mark.parametrize("action", ACTIONS)
-def test_prompts_describe_the_world_and_its_pools(action):
+def test_the_prompt_describes_the_world_and_its_pools():
     _, obs = reset(GROCERY, "holiday_rush")
-    prompt = inference.system_prompt(action, obs)
+    prompt = inference.system_prompt(obs)
     assert prompt.startswith("You are the procurement agent of a neighbourhood grocery store,")
     assert "milk       - fresh milk, sold daily, spoils fast" in prompt and "ice_cream  - ice cream" in prompt
     assert "lists every storage pool by name" in prompt and "storage_pool                 — " in prompt
@@ -162,13 +158,12 @@ def test_prompts_describe_the_world_and_its_pools(action):
     assert not any(word in lowered for word in PHARMA_WORDS)
     assert not any(key in prompt for key in ("cold_days", "ambient_days", "cold_ratio", "ambient_ratio"))
     # Only the pharma-specific sentences change: the answer format is the original's.
-    assert prompt.split("ACTION FORMAT")[1] == inference.system_prompt(action).split("ACTION FORMAT")[1]
+    assert prompt.split("ACTION FORMAT")[1] == inference.system_prompt().split("ACTION FORMAT")[1]
 
 
-@pytest.mark.parametrize("action", ACTIONS)
-def test_a_cold_plus_ambient_world_keeps_the_cold_and_ambient_report_keys(action):
+def test_a_cold_plus_ambient_world_keeps_the_cold_and_ambient_report_keys():
     _, obs = reset(two_pool_grocery(), "normal_weeks", insights=False)
-    prompt = inference.system_prompt(action, obs)
+    prompt = inference.system_prompt(obs)
     assert "grocery store" in prompt and "Two storage pools:" in prompt and "cold_days and ambient_days" in prompt
     assert "storage_pool                 — " not in prompt
     assert not any(word in prompt.lower() for word in PHARMA_WORDS)
@@ -176,7 +171,7 @@ def test_a_cold_plus_ambient_world_keeps_the_cold_and_ambient_report_keys(action
 
 def test_every_swap_still_matches_the_prompt_texts():
     # If a prompt is reworded, a swap that no longer matches must be noticed here.
-    rules = inference._UNITS_RULES + inference._DAYS_RULES + inference._ADJUST_RULES
+    rules = inference._ADJUST_RULES
     for old, _ in inference._GENERIC_SWAPS + inference._POOL_SWAPS:
         assert old in rules, old
     with pytest.raises(ValueError, match="prompt text not found"):
@@ -215,7 +210,7 @@ def test_agents_send_the_worlds_prompts():
         obs = env.step(InventoryAction(message="{}"))
     LLMAgent("stub", "x", "x", client=client).act(obs, [])
     InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
-    assert sent[0][0]["content"] == inference.system_prompt("adjust", obs)
+    assert sent[0][0]["content"] == inference.system_prompt(obs)
     assert sent[1][0]["content"] == inference.insights_system_prompt(obs)
     assert "grocery store" in sent[0][0]["content"] and "grocery store" in sent[1][0]["content"]
     assert "neighbourhood grocery store" in env.to_llm_prompt()

@@ -82,7 +82,7 @@ def make_agent(name: str, llm: Optional[Dict[str, str]] = None) -> Agent:
     if name == "llm":
         llm = llm or {}
         return LLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
-                        timeout=float(llm.get("timeout", 60.0)), action=llm.get("action", "adjust"))
+                        timeout=float(llm.get("timeout", 60.0)))
     raise ValueError(f"Unknown agent '{name}'. Choose from {AGENTS}.")
 
 
@@ -118,7 +118,7 @@ def run_episode(
         day = obs.current_date
         obs_insights = obs.insights
         reply, error = agent.act(obs, history)
-        # What the model itself wrote; for the "adjust" and "days" formats `reply` is the
+        # What the model itself wrote; `reply` is the
         # converted order, so check and log the model's own text.
         model_reply = getattr(agent, "last_model_reply", None)
         model_reply = reply if model_reply is None else model_reply
@@ -317,9 +317,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--api-key", default=None, help="llm: API key (default: HF_TOKEN / API_KEY env var)")
     parser.add_argument("--timeout", type=float, default=60.0,
                         help="llm: seconds per model call (raise for large local models on a CPU)")
-    parser.add_argument("--action", choices=inference.ACTION_FORMATS, default="adjust",
-                        help="llm: adjust = extra days on top of the baseline's default (default); "
-                             "days = days of stock per SKU; units = units to order")
     parser.add_argument("--compare", nargs=2, type=Path, metavar=("CANDIDATE", "REFERENCE"),
                         help="compare two result files seed by seed instead of running")
     parser.add_argument("--oracle", type=Path, help="with --compare: oracle results, to report gap closed")
@@ -349,7 +346,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         # Local servers such as Ollama ignore the key, but the client needs a non-empty one.
         api_key = args.api_key or os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "not-needed"
         llm = {"model": args.model, "base_url": args.base_url, "api_key": api_key,
-               "timeout": args.timeout, "action": args.action}
+               "timeout": args.timeout}
     workers = args.workers or (1 if llm else min(os.cpu_count() or 1, 8))
 
     records = evaluate(args.agent, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.insights,

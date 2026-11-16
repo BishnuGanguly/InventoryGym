@@ -45,7 +45,7 @@ def test_adjust_is_the_default_and_its_prompt_has_no_example_quantities():
     obs, history = _played(10)
     agent.act(obs, history)
     system, user = create.messages[0]["content"], create.messages[1]["content"]
-    assert system == inference.SYSTEM_PROMPT_ADJUST and "ADJUSTMENT DAYS" in system
+    assert system == inference.SYSTEM_PROMPT and "ADJUSTMENT DAYS" in system
     assert not SKU_WITH_NUMBER.search(system)
     assert not SKU_WITH_NUMBER.search(user[user.index("--- YOUR DECISION ---"):])
 

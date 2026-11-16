@@ -72,7 +72,7 @@ SUCCESS_THRESHOLD = 0.80
 # System prompt
 # ---------------------------------------------------------------------------
 
-# Shared by both action formats: who the agent is, the warehouse, and the report fields.
+# Who the agent is, the warehouse, and the report fields.
 _PROMPT_INTRO = textwrap.dedent("""
     You are a pharmaceutical warehouse procurement agent managing a cold-chain inventory over a multi-day episode.
 
@@ -113,76 +113,7 @@ _PROMPT_INTRO = textwrap.dedent("""
     delays, demand surges), each starting with the day it was published.
 """).strip()
 
-# Action format "units": the model writes the number of units to order per SKU.
-_UNITS_RULES = textwrap.dedent("""
-    DECISION RULES
-    --------------
-    1. Decide for EVERY SKU in the report, every day. Each one needs its own quantity.
-    2. A SKU needs an order when its days_of_cover is below avg_lead_time plus a safety
-       margin of about 3 days. If days_of_cover is comfortably above that, do not order it.
-    3. Size an order to bring days_of_cover back up to about avg_lead_time + 3 days:
-       roughly avg_demand_last_5_days x (avg_lead_time + 3) - inventory_on_hand - inbound_units.
-    4. If lead_time_last3_orders is rising, suppliers are slowing down: use the larger
-       lead time, and order earlier.
-    5. Deliveries that do not fit in storage are wasted, and wasted cold-storage (insulin)
-       deliveries cost the most. Never order far more than a SKU needs.
-    6. Keep a bigger safety margin for SKUs with a high stockout_penalty; when storage is
-       tight, protect them first.
-
-    ACTION FORMAT
-    -------------
-    Respond with one JSON object mapping SKU names to the number of units to order today.
-    Use the exact SKU names from the report and compute each quantity from the report.
-    Leave out SKUs that do not need an order. If nothing needs ordering, respond with {}.
-
-    Format:
-        {"<sku_name>": <units>, "<sku_name>": <units>}
-""").strip()
-
-# Action format "days": the model chooses how many days of stock it wants per SKU and
-# days_to_units() turns that into units. Small models judge "how much cover" far better
-# than they do the multiply-and-subtract to get units.
-_DAYS_RULES = textwrap.dedent("""
-    YOUR DECISION: DAYS OF STOCK
-    ----------------------------
-    You do not order units directly. For EVERY SKU, choose how many DAYS OF STOCK you want
-    to have after today's order, counting stock on the shelf plus orders already on the way.
-    One day of stock = the SKU's recent daily demand (the larger of avg_demand_last_5_days
-    and avg_demand_per_day). The system turns your choice into an order:
-        units ordered = days x recent daily demand - inventory_on_hand - inbound_units
-
-    days_of_cover in the report is what you ALREADY HAVE. Your answer is the TARGET you want.
-    Answering with the current days_of_cover orders nothing; to restock, answer with more.
-
-    DECISION RULES
-    --------------
-    1. Choose a number of days for EVERY SKU in the report, every day.
-    2. An order takes about avg_lead_time days to arrive, so choose more days than
-       avg_lead_time. About avg_lead_time + 3 days is a sensible default; for most SKUs on
-       most days that is between 10 and 14 days.
-    3. Keep the target steady from day to day. Do not let it run down and then jump up.
-    4. If lead_time_last3_orders is rising, suppliers are slowing down: choose a few more days.
-    5. If avg_demand_last_5_days is clearly above avg_demand_per_day, demand is rising:
-       choose a few more days.
-    6. Each storage pool holds only cold_days / ambient_days days of its SKUs' demand, shared
-       by all SKUs in the pool (watch cold_ratio and ambient_ratio). Large targets overflow
-       storage, and deliveries that do not fit are wasted; wasted cold-storage (insulin)
-       deliveries cost the most. Targets near that limit for every SKU waste stock.
-    7. Give more days to SKUs with a high stockout_penalty, especially when storage is tight.
-    8. Until some demand has been observed (days_of_cover is null), nothing can be ordered,
-       whatever you choose.
-
-    ACTION FORMAT
-    -------------
-    Respond with one JSON object mapping EVERY SKU name to the number of days of stock you
-    want. Use the exact SKU names from the report. The values are days, not units; the
-    largest target accepted is 21 days.
-
-    Format:
-        {"<sku_name>": <days>, "<sku_name>": <days>, ...}
-""").strip()
-
-# Action format "adjust": an automatic rule orders a sensible default for every SKU and
+# How the model answers: an automatic rule orders# Action format "adjust": an automatic rule orders a sensible default for every SKU and
 # the model only answers how many days to keep above or below it.
 _ADJUST_RULES = textwrap.dedent("""
     YOUR DECISION: ADJUSTMENT DAYS
@@ -222,17 +153,11 @@ _ADJUST_RULES = textwrap.dedent("""
         {"<sku_name>": <adjustment_days>, "<sku_name>": <adjustment_days>, ...}
 """).strip()
 
-SYSTEM_PROMPT = _PROMPT_INTRO + "\n\n" + _UNITS_RULES
-SYSTEM_PROMPT_DAYS = _PROMPT_INTRO + "\n\n" + _DAYS_RULES
-SYSTEM_PROMPT_ADJUST = _PROMPT_INTRO + "\n\n" + _ADJUST_RULES
-ACTION_FORMATS = ("units", "days", "adjust")
-# Range of an "adjust" answer, in days added to the default cover (lead time + 3 days).
+SYSTEM_PROMPT = _PROMPT_INTRO + "\n\n" + _ADJUST_RULES
+# Range of an answer, in days added to the default cover (lead time + 3 days).
 # No negative values: keeping less than the default never helped (all -1: 0.853, all -3:
 # 0.728, vs 0.869 for 0, on 20 test seeds per task), it only added stockouts.
 ADJUST_DAYS_RANGE = (0.0, 10.0)
-# Upper limit on a "days" answer: the 21-day storage size. A pool is shared, so targets
-# near the limit for every SKU can still overflow it when demand is above its base level.
-MAX_DAYS_OF_STOCK = 21.0
 
 
 
@@ -465,7 +390,6 @@ def build_user_prompt(
     obs_dict: Dict[str, Any],
     action_history: List[Tuple[int, str, str]],
     step: int,
-    action: str = "units",
 ) -> str:
     """
     Build the user-turn message from:
@@ -481,26 +405,12 @@ def build_user_prompt(
         n_days = min(HISTORY_DAYS, len(action_history))
         parts.append(f"--- RESULTS OF THE LAST {n_days} DAY{'S' if n_days != 1 else ''} ---\n{history_str}")
     parts.append(f"--- TODAY'S INVENTORY REPORT ---\n{format_report(obs_dict)}")
-    if action == "adjust":
-        parts.append(
-            "--- YOUR DECISION ---\n"
-            "For every SKU, choose its adjustment days (see the rules; 0 keeps the default), then "
-            "respond with a single JSON object on one line:\n"
-            '{"<sku_name>": <adjustment_days>, ...}'
-        )
-    elif action == "days":
-        parts.append(
-            "--- YOUR DECISION ---\n"
-            "For every SKU, choose the days of stock you want (see the rules), then respond with "
-            "a single JSON object on one line:\n"
-            '{"<sku_name>": <days>, ...}'
-        )
-    else:
-        parts.append(
-            "--- YOUR PROCUREMENT DECISION ---\n"
-            "Go through every SKU, then respond with a single JSON object on one line:\n"
-            '{"<sku_name>": <units>, ...} for the SKUs that need an order, or {} if none do.'
-        )
+    parts.append(
+        "--- YOUR DECISION ---\n"
+        "For every SKU, choose its adjustment days (see the rules; 0 keeps the default), then "
+        "respond with a single JSON object on one line:\n"
+        '{"<sku_name>": <adjustment_days>, ...}'
+    )
     return "\n\n".join(parts)
 
 
@@ -520,36 +430,6 @@ def parse_json_object(text: str) -> Dict[str, Any]:
     return parsed
 
 
-def days_to_units(obs: InventoryState, days_by_sku: Dict[str, Any]) -> Dict[str, float]:
-    """
-    Turn "days of stock wanted" per SKU into units to order, using only what the agent observes:
-        units = days x recent daily demand - inventory_on_hand - inbound_units
-    Recent daily demand is the larger of avg_demand_last_5_days and avg_demand_per_day.
-    Days are clipped to [0, MAX_DAYS_OF_STOCK]; unknown SKUs, non-numbers and SKUs with no
-    demand seen yet are skipped; orders below one unit are dropped.
-    """
-    known = {sku_id.lower(): sku_id for sku_id in obs.skus}
-    inbound = inbound_units_by_sku(obs)
-    orders: Dict[str, float] = {}
-    for name, value in days_by_sku.items():
-        sku_id = known.get(str(name).strip().lower())
-        if sku_id is None or isinstance(value, bool):
-            continue
-        try:
-            days = float(value)
-        except (TypeError, ValueError):
-            continue
-        if not math.isfinite(days):
-            continue
-        days = min(max(days, 0.0), MAX_DAYS_OF_STOCK)
-        sku = obs.skus[sku_id]
-        recent_demand = max(sku.avg_demand_last_5_days, sku.avg_demand_per_day)
-        if recent_demand <= 0:
-            continue
-        units = days * recent_demand - sku.inventory_on_hand - inbound[sku_id]
-        if units >= 1:
-            orders[sku_id] = float(round(units))
-    return orders
 
 # ---------------------------------------------------------------------------
 # Insights adviser (hybrid agent): the LLM reads the insights, the baseline does the maths
@@ -656,15 +536,12 @@ _POOLS_TEXT = textwrap.dedent("""
 
 # Sentences that name pharma products, swapped in every world with its own wording.
 _GENERIC_SWAPS = [
-    ("wasted cold-storage (insulin)\n   deliveries cost the most",
-     "wasted deliveries of SKUs with a\n   high waste_penalty cost the most"),
     ("wasted insulin costs the most", "wasted deliveries of SKUs with a high waste_penalty cost the most"),
 ]
 # Sentences about the cold/ambient report keys, swapped when the report lists pools by name.
 _POOL_SWAPS = [
     ("cold_days / ambient_days days of its SKUs' demand",
      "as many days of its SKUs' demand as the days shown for it in the report"),
-    ("(watch cold_ratio and ambient_ratio)", "(watch each pool's ratio)"),
     ("If cold_ratio or ambient_ratio is", "If a pool's ratio is"),
 ]
 
@@ -684,14 +561,13 @@ def _intro(obs: InventoryState) -> str:
     return text
 
 
-def system_prompt(action: str = "units", obs: Optional[InventoryState] = None) -> str:
+def system_prompt(obs: Optional[InventoryState] = None) -> str:
     """
-    The system prompt of an answer format. Without `obs`, or for an episode of the
-    built-in pharma world, the original prompt; for any other world, the same prompt
-    about that world: its business, its products and, when the report lists storage
-    pools by name, its pools.
+    The system prompt. Without `obs`, or for an episode of the built-in pharma world, the
+    original prompt; for any other world, the same prompt about that world: its business,
+    its products and, when the report lists storage pools by name, its pools.
     """
-    rules = {"days": _DAYS_RULES, "adjust": _ADJUST_RULES}.get(action, _UNITS_RULES)
+    rules = _ADJUST_RULES
     if not has_own_words(obs):
         return _PROMPT_INTRO + "\n\n" + rules
     rules = _swap_if_present(rules, _GENERIC_SWAPS)
@@ -775,20 +651,23 @@ def adjust_days(obs: InventoryState, reply: Dict[str, Any]) -> Dict[str, float]:
 
 def get_llm_action(
     client: OpenAI,
-    obs_dict: Dict[str, Any],
+    obs: InventoryState,
     action_history: List[Tuple[int, str, str]],
     step: int,
 ) -> str:
     """
-    Call the LLM with the current inventory report and full action history.
-    Returns the raw action string. Falls back to '{}' (no order) on error.
+    Ask the LLM for today's adjustment days and return the order to send, as JSON: the
+    baseline rule's order with the model's extra days on top. If the call fails, the
+    baseline rule's own order.
     """
-    user_prompt = build_user_prompt(obs_dict, action_history, step)
+    from agents import baseline_policy          # agents.py imports this module
+
+    user_prompt = build_user_prompt(observation_to_dict(obs, include_cover=False), action_history, step)
     try:
         completion = client.chat.completions.create(
             model       = MODEL_NAME,
             messages    = [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt(obs)},
                 {"role": "user",   "content": user_prompt},
             ],
             temperature = TEMPERATURE,
@@ -796,10 +675,11 @@ def get_llm_action(
             stream      = False,
         )
         text = (completion.choices[0].message.content or "").strip()
-        return text if text else "{}"
     except Exception as exc:
         print(f"[DEBUG] LLM call failed at step {step}: {exc}", flush=True)
-        return "{}"
+        return json.dumps(baseline_policy(obs))
+    extra = adjust_days(obs, parse_json_object(text))
+    return json.dumps(baseline_policy(obs, extra_days=extra, min_extra=ADJUST_DAYS_RANGE[0]))
 
 # ---------------------------------------------------------------------------
 # Single episode
@@ -867,7 +747,7 @@ async def run_episode(
             # Get LLM action — passes full action history for context
             raw_action = get_llm_action(
                 client         = client,
-                obs_dict       = obs_dict,
+                obs            = last_obs,
                 action_history = action_history,
                 step           = step,
             )

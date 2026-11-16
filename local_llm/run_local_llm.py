@@ -175,9 +175,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--server-model", default=None,
                         help="exact model name on the server, to skip the pharma-<model> copy (e.g. a non-Ollama server)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="seconds allowed per model call")
-    parser.add_argument("--action", choices=E.inference.ACTION_FORMATS, default="adjust",
-                        help="adjust (default): the model answers extra days on top of a sensible default per SKU; "
-                             "days: days of stock per SKU; units: units to order")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="OpenAI-compatible endpoint")
     parser.add_argument("--agent", choices=("llm", "llm_insights"), default="llm",
                         help="llm: the model decides every order; llm_insights: the baseline orders and the model "
@@ -223,14 +220,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             setup(args.base_model, model)
         check_server(args.base_url, model, setup_hint=f"--setup --model {args.base_model}")
     llm = {"model": model, "base_url": args.base_url, "api_key": "not-needed",
-           "timeout": args.timeout, "action": args.action}
+           "timeout": args.timeout}
 
     shown = model if args.server_model else f"{args.base_model} (as {model})"
     if args.agent == "llm_insights":
         print(f"Model {shown} at {args.base_url}, reading the insights (called only on days with insights): "
               f"{len(tasks)} task(s) x {len(seeds)} seed(s)\n", flush=True)
     else:
-        print(f"Model {shown} at {args.base_url}, answering in {args.action}: {len(tasks)} task(s) x {len(seeds)} "
+        print(f"Model {shown} at {args.base_url}, answering with extra days per product: {len(tasks)} task(s) x {len(seeds)} "
               f"seed(s) = {len(tasks) * len(seeds) * 60} model calls\n", flush=True)
     llm_records = run_llm(tasks, seeds, args.split, llm, base_model=None if args.server_model else args.base_model,
                           agent=args.agent, insights=args.insights)
