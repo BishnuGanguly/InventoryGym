@@ -105,16 +105,16 @@ On a laptop CPU each call reads a ~1,800-token prompt, so expect anything from s
 seconds (small models) to a minute or more (7B+) per simulated day. Each call may take up
 to `--timeout` seconds (default 600) before it counts as failed.
 
-## Insights and the hybrid agent
+## Insights and the hybrid policy
 
 With `--insights`, disruptions are announced 5–10 days before they start (see
-"Insights" in the main README). `--agent llm_insights` runs the hybrid: the baseline places the
+"Insights" in the main README). `--policy llm_insights` runs the hybrid: the baseline places the
 orders and the model only reads the insights and answers with extra safety days per product.
 The model is called only on days with insights (about 30–55 of the 60 days), with a short
-prompt, so a run is much faster than `--agent llm`:
+prompt, so a run is much faster than `--policy llm`:
 
 ```bash
-uv run python local_llm/run_local_llm.py --model qwen2.5:3b --agent llm_insights --insights --tasks all --seed 10000
+uv run python local_llm/run_local_llm.py --model qwen2.5:3b --policy llm_insights --insights --tasks all --seed 10000
 # -> results/llm_insights_pharma-qwen2-5-3b_insights_test_all_seed10000.jsonl
 ```
 
@@ -132,7 +132,7 @@ the target to aim for. Replies on days without insights are logged as
 | `--episodes` | `1` | Seeds per task (the first N test seeds) |
 | `--seed` | none | Run exactly this one seed per task instead (test seeds 10000–19999, train 0–9999) |
 | `--timeout` | `600` | Seconds allowed per model call |
-| `--agent` | `llm` | `llm`: the model decides every order; `llm_insights`: the model reads the insights, the baseline orders |
+| `--policy` | `llm` | `llm`: the model decides every order; `llm_insights`: the model reads the insights, the baseline orders |
 | `--insights` | off | Announce each disruption 5 to 10 days ahead |
 | `--show` | `10` | How many of the model's replies to print |
 | `--split` | `test` | `train` or `test` seeds |

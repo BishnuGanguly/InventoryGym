@@ -1,20 +1,20 @@
 """
-Agents that play the Pharma environment, shared by the dashboard (server/dashboard.py)
+Policies that play the Pharma environment, shared by the dashboard (server/dashboard.py)
 and the evaluation script (eval.py).
 
-Every agent has the same interface:
+Every policy has the same interface:
 
-    agent.start_episode(env)            # called once, right after env.reset()
-    reply, error = agent.act(obs, history)
+    policy.start_episode(env)            # called once, right after env.reset()
+    reply, error = policy.act(obs, history)
 
 `reply` is the text sent as InventoryAction(message=reply); `error` is None or a
 description of what went wrong (e.g. a failed LLM call). `history` is the list of
 (day, reply, feedback) tuples from earlier days, as built in inference.py.
 
-Reference agents for evaluation:
-- NothingAgent:  never orders - the floor.
-- BaselineAgent: a simple order-up-to rule using only the observation.
-- OracleAgent:   perfect foresight - reads the episode's hidden demand and lead
+Reference policies for evaluation:
+- NothingPolicy:  never orders - the floor.
+- BaselinePolicy: a simple order-up-to rule using only the observation.
+- OraclePolicy:   perfect foresight - reads the episode's hidden demand and lead
                  times from the environment and plans just-in-time deliveries.
                  It cheats by design: it only marks the best achievable score.
 """
@@ -31,8 +31,8 @@ from models import InventoryState
 History = List[Tuple[int, str, str]]
 
 
-class Agent:
-    """Base class: override act(); override start_episode() if the agent needs setup."""
+class Policy:
+    """Base class: override act(); override start_episode() if the policy needs setup."""
 
     def start_episode(self, env: Any) -> None:
         pass
@@ -45,7 +45,7 @@ class Agent:
 # Floor and baseline
 # ---------------------------------------------------------------------------
 
-class NothingAgent(Agent):
+class NothingPolicy(Policy):
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
         return "{}", None
 
@@ -68,13 +68,13 @@ def baseline_policy(
     min_extra: float = 0.0,
 ) -> Dict[str, float]:
     """
-    Order-up-to policy that uses only what the agent can observe: keep enough
+    Order-up-to policy that uses only what the policy can observe: keep enough
     stock plus inbound to cover the (most pessimistic) lead time plus a few
     safety days of recent demand.
 
     extra_days adds safety days per SKU (e.g. chosen from the insights), clipped to
     [min_extra, MAX_EXTRA_DAYS] and so that the total cover stays within MAX_COVER_DAYS.
-    min_extra below 0 lets an agent keep less than the default (never below the lead time).
+    min_extra below 0 lets a policy keep less than the default (never below the lead time).
     """
     extra_days = extra_days or {}
     inbound: Dict[str, float] = {}
@@ -95,7 +95,7 @@ def baseline_policy(
     return orders
 
 
-class BaselineAgent(Agent):
+class BaselinePolicy(Policy):
     def act(self, obs: InventoryState, history: History) -> Tuple[str, Optional[str]]:
         return json.dumps(baseline_policy(obs)), None
 
@@ -149,7 +149,7 @@ def insights_extra_days(obs: InventoryState, events: List[Any], safety_days: flo
     return extra
 
 
-class InsightsRuleAgent(Agent):
+class InsightsRulePolicy(Policy):
     """
     The baseline plus insights_extra_days() from the exact event behind each published insights
     item: what perfect understanding of the insights is worth to the baseline. It reads the
@@ -304,11 +304,11 @@ def insights_plan_adjust_days(
     return answer
 
 
-class InsightsPlanAgent(Agent):
+class InsightsPlanPolicy(Policy):
     """
     insights_plan_orders() on the exact event behind each published insight: an inventory
     plan (cover period, demand forecast, storage cap) instead of the baseline plus extra
-    days. Like InsightsRuleAgent it reads the structured events, not the text, so it is a
+    days. Like InsightsRulePolicy it reads the structured events, not the text, so it is a
     reference for what the insights are worth, and it earns clearly more of it. Without insights
     it plays exactly like the baseline.
     """
@@ -329,11 +329,11 @@ class InsightsPlanAgent(Agent):
         return json.dumps(insights_plan_orders(obs, self._events, self._normal_lead_time)), None
 
 
-class InsightsLLMAgent(Agent):
+class InsightsLLMPolicy(Policy):
     """
     The hybrid: the baseline does the arithmetic, and an LLM reads the insights text and
     answers only with extra safety days per SKU (inference.INSIGHTS_SYSTEM_PROMPT). On days
-    with no insights the model is not called and the agent plays exactly like the baseline,
+    with no insights the model is not called and the policy plays exactly like the baseline,
     so a confused model can only hurt on days with insights, and only within MAX_EXTRA_DAYS.
     """
 
@@ -378,7 +378,7 @@ class InsightsLLMAgent(Agent):
 # Ceiling: perfect foresight
 # ---------------------------------------------------------------------------
 
-class OracleAgent(Agent):
+class OraclePolicy(Policy):
     """
     Knows the episode's true demand for every day and the true lead time of an
     order placed on any day (both fixed by the seed since the noise is drawn at
@@ -389,7 +389,7 @@ class OracleAgent(Agent):
        latest while still arriving on or before t.
     3. Each day, place the orders planned for that day.
 
-    Days before any delivery can arrive are lost for every agent, so the oracle
+    Days before any delivery can arrive are lost for every policy, so the oracle
     marks the best score reachable, not 1.0.
     """
 
@@ -429,7 +429,7 @@ class OracleAgent(Agent):
 # LLM
 # ---------------------------------------------------------------------------
 
-class LLMAgent(Agent):
+class LLMPolicy(Policy):
     """
     One chat call per day, with the prompt and history format from inference.py.
 

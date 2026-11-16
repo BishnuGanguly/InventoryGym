@@ -59,7 +59,7 @@ whatever was drawn.
 
 Words
 -----
-Prompts and insights are written from the world, so an agent reads about your
+Prompts and insights are written from the world, so a policy reads about your
 business and your products:
 
     business      whose inventory this is, e.g. "a grocery store" (default "a warehouse")

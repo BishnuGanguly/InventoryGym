@@ -1,5 +1,5 @@
 """
-The teacher: the insights plan (agents.insights_plan_targets) answering in the `adjust` format,
+The teacher: the insights plan (policies.insights_plan_targets) answering in the `adjust` format,
 and supervised examples made from its answers.
 
 GRPO starts from a model that has no idea how many days a delay or a surge is worth,
@@ -8,7 +8,7 @@ knows the events behind the insights and answers every day with the extra days t
 the baseline closest to an inventory plan. Fine-tuning on (prompt, teacher answer)
 pairs first gives GRPO a model that already answers sensibly.
 
-    from training.teacher import sft_examples, TeacherAgent
+    from training.teacher import sft_examples, TeacherPolicy
 
     rows = sft_examples(tasks, seeds=range(0, 300))        # train seeds only
     rows[0]["messages"]     # system, user (exactly the model's prompt), assistant (the teacher's answer)
@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
-from agents import Agent, BaselineAgent, insights_plan_adjust_days  # noqa: E402
+from policies import Policy, BaselinePolicy, insights_plan_adjust_days  # noqa: E402
 from models import InventoryState, InventoryAction  # noqa: E402
 from server.inventory_environment import InventoryEnvironment  # noqa: E402
 from tasks import PHARMA_TASKS, SURPRISE_TASKS, TRAIN_SEEDS  # noqa: E402
@@ -63,7 +63,7 @@ QUIET_SHARE = 0.15
 def normal_lead_times(env: InventoryEnvironment) -> Dict[str, float]:
     """
     Each SKU's normal lead time: the avg_lead_time of the first report, before any
-    delivery (InsightsPlanAgent keeps that value; this reads the same number on any day).
+    delivery (InsightsPlanPolicy keeps that value; this reads the same number on any day).
     """
     return {sku_id: float(cfg.base_lead_time) for sku_id, cfg in env._episode_config.skus.items()}
 
@@ -86,7 +86,7 @@ def answer_text(answer: Dict[str, int]) -> str:
     return json.dumps(answer)
 
 
-class TeacherAgent(Agent):
+class TeacherPolicy(Policy):
     """
     Plays the teacher's answers through the model's own path (the answer text is parsed
     and turned into an order exactly as a model's would be), so its score is what a model
@@ -154,7 +154,7 @@ def sft_examples(
             obs = env.reset(task_name=task, seed=seed, insights=insights)
             events = list(env._episode_config.insights)
             normal = normal_lead_times(env)
-            baseline, history = BaselineAgent(), []
+            baseline, history = BaselinePolicy(), []
             while not obs.done:
                 day = obs.current_date
                 answer = answer_text(teacher_answer(obs, events, normal))

@@ -11,7 +11,7 @@ import pytest
 
 import inference
 import training.grpo_reward as G
-from agents import LLMAgent
+from policies import LLMPolicy
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
 from tasks import SURPRISE_TASKS, TEST_SEEDS, TRAIN_SEEDS
@@ -60,7 +60,7 @@ def test_state_is_rebuilt_exactly(prompts):
     assert a == b and ha == hb
 
 
-def test_prompt_is_what_the_llm_agent_sends(prompts):
+def test_prompt_is_what_the_llm_policy_sends(prompts):
     """An adjust-mode LLM that answers {} plays exactly like the baseline, so its messages on that day must match."""
     p = prompts[len(prompts) // 3]
     sent = []
@@ -69,13 +69,13 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
         sent.append(messages)
         return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))])
 
-    agent = LLMAgent("stub", "x", "x", client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    policy = LLMPolicy("stub", "x", "x", client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     env = InventoryEnvironment()
     obs = env.reset(task_name=p.task, seed=p.seed, insights=p.insights)
     history = []
     while obs.current_date <= p.day:
         day = obs.current_date
-        reply, _ = agent.act(obs, history)
+        reply, _ = policy.act(obs, history)
         obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     assert sent[p.day] == G.prompt_messages(p)

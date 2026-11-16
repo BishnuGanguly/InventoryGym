@@ -8,7 +8,7 @@ Install Ollama first (https://ollama.com/download) and keep it running. Then:
     uv run python local_llm/run_local_llm.py --model qwen2.5:3b               # any Ollama model
     uv run python local_llm/run_local_llm.py --model qwen2.5:3b --seed 10000 --tasks all
     uv run python local_llm/run_local_llm.py --tasks all --episodes 3         # 3 seeds of every task
-    uv run python local_llm/run_local_llm.py --model qwen2.5:3b --agent llm_insights --insights --tasks all
+    uv run python local_llm/run_local_llm.py --model qwen2.5:3b --policy llm_insights --insights --tasks all
                                                      # hybrid: the model reads insights, the baseline orders
     uv run python local_llm/run_local_llm.py --model phi4-mini --insights --tasks surprise --episodes 5
                                                      # the tasks whose products and days are drawn per seed
@@ -112,7 +112,7 @@ def check_server(base_url: str, model: str, setup_hint: str = "--setup", api_key
 # ---------------------------------------------------------------------------
 
 def run_llm(tasks: Sequence[str], seeds: Sequence[int], split: str, llm: Dict[str, Any],
-            base_model: Optional[str] = None, agent: str = "llm", insights: bool = False) -> List[Dict[str, Any]]:
+            base_model: Optional[str] = None, policy: str = "llm", insights: bool = False) -> List[Dict[str, Any]]:
     records = []
     total = len(tasks) * len(seeds)
     for i, (task, seed) in enumerate(((t, s) for t in tasks for s in seeds), start=1):
@@ -123,10 +123,10 @@ def run_llm(tasks: Sequence[str], seeds: Sequence[int], split: str, llm: Dict[st
             # A dot per day, the day number every 10: large models on a CPU are slow.
             print(f"{day + 1}" if (day + 1) % 10 == 0 else ".", end="", flush=True)
 
-        record = E.run_episode(agent, task, seed, split=split, llm=llm, save_steps=True, on_day=progress, insights=insights)
+        record = E.run_episode(policy, task, seed, split=split, llm=llm, save_steps=True, on_day=progress, insights=insights)
         if base_model:
-            record = {"agent": record["agent"], "model": record["model"], "base_model": base_model,
-                      **{k: v for k, v in record.items() if k not in ("agent", "model")}}
+            record = {"policy": record["policy"], "model": record["model"], "base_model": base_model,
+                      **{k: v for k, v in record.items() if k not in ("policy", "model")}}
         print(f" -> score {record['score']:.3f}, {record['parse_failures']} replies without JSON "
               f"({time.time() - started:.0f}s)", flush=True)
         records.append(record)
@@ -176,7 +176,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                         help="exact model name on the server, to skip the pharma-<model> copy (e.g. a non-Ollama server)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="seconds allowed per model call")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="OpenAI-compatible endpoint")
-    parser.add_argument("--agent", choices=("llm", "llm_insights"), default="llm",
+    parser.add_argument("--policy", choices=("llm", "llm_insights"), default="llm",
                         help="llm: the model decides every order; llm_insights: the baseline orders and the model "
                              "only reads the insights and adds extra safety days (needs --insights)")
     parser.add_argument("--insights", action="store_true",
@@ -193,8 +193,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--results-dir", type=Path, default=ROOT / "results")
     args = parser.parse_args(argv)
 
-    if args.agent == "llm_insights" and not args.insights:
-        parser.error("--agent llm_insights reads the insights: add --insights")
+    if args.policy == "llm_insights" and not args.insights:
+        parser.error("--policy llm_insights reads the insights: add --insights")
     groups = {"all": PHARMA_TASKS, "surprise": SURPRISE_TASKS}
     tasks = list(groups[args.tasks]) if args.tasks in groups else [t.strip() for t in args.tasks.split(",")]
     unknown = [t for t in tasks if t not in PHARMA_TASKS]
@@ -223,14 +223,14 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
            "timeout": args.timeout}
 
     shown = model if args.server_model else f"{args.base_model} (as {model})"
-    if args.agent == "llm_insights":
+    if args.policy == "llm_insights":
         print(f"Model {shown} at {args.base_url}, reading the insights (called only on days with insights): "
               f"{len(tasks)} task(s) x {len(seeds)} seed(s)\n", flush=True)
     else:
         print(f"Model {shown} at {args.base_url}, answering with extra days per product: {len(tasks)} task(s) x {len(seeds)} "
               f"seed(s) = {len(tasks) * len(seeds) * 60} model calls\n", flush=True)
     llm_records = run_llm(tasks, seeds, args.split, llm, base_model=None if args.server_model else args.base_model,
-                          agent=args.agent, insights=args.insights)
+                          policy=args.policy, insights=args.insights)
     runs = {name: [E.run_episode(name, t, s, split=args.split, insights=args.insights)
                    for t in tasks for s in seeds]
             for name in ("baseline", "oracle") + (("baseline_insights",) if args.insights else ())}
@@ -239,7 +239,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     insights = "_insights" if args.insights else ""
     stem = f"{args.split}_{args.tasks if args.tasks in groups else '-'.join(tasks)}_{count}"
     safe_model = "".join(c if c.isalnum() or c == "." else "-" for c in model)
-    paths = {f"{args.agent}_{safe_model}{insights}": llm_records,
+    paths = {f"{args.policy}_{safe_model}{insights}": llm_records,
              **{f"{name}{insights if name == 'baseline_insights' else ''}": r for name, r in runs.items()}}
     for name, records in paths.items():
         E.write_jsonl(args.results_dir / f"{name}_{stem}.jsonl", records)

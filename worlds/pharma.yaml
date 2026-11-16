@@ -1,7 +1,7 @@
 # The built-in pharma world: the original environment, as data.
 #
 # Copy this file to describe your own inventory (see world.py for every field):
-#   uv run python eval.py --world worlds/my_store.yaml --agent baseline
+#   uv run python eval.py --world worlds/my_store.yaml --policy baseline
 #
 # Any amount can be a number or a [low, high] range, drawn once per episode from the
 # seed. Order matters for reproducibility: events are drawn in the order listed, then

@@ -24,7 +24,7 @@ class StoragePoolConfig(BaseModel):
 
 
 class StoragePoolState(BaseModel):
-    """One storage pool as the agent sees it."""
+    """One storage pool as the policy sees it."""
 
     total_capacity: float = Field(gt=0.0, description="Units the pool holds. Fixed for the episode.")
     current_capacity: float = Field(default=0.0, ge=0.0, description="Units it holds now, all its SKUs together.")
@@ -53,7 +53,7 @@ class ProductInfo(BaseModel):
 
 class WorldContext(BaseModel):
     """
-    What the agent may know about the world it works in: whose inventory this is and
+    What the policy may know about the world it works in: whose inventory this is and
     what the products are. Nothing here is hidden ground truth. Absent (None) for the
     built-in pharma world, whose prompts keep their original wording.
     """
@@ -87,7 +87,7 @@ class SKUState(BaseModel):
         description="Unique identifier for the SKU. Used as the key in all order and inventory dicts."
     )
 
-    # -- Averages (derived from observable history — agent sees these) -------
+    # -- Averages (derived from observable history — policy sees these) -------
 
     avg_demand_per_day: float = Field(
         default=0.0,
@@ -112,7 +112,7 @@ class SKUState(BaseModel):
         ge=0.0,
         description=(
             "Rolling average lead time in days computed from all observed deliveries so far. "
-            "Agent uses this to estimate expected_inbound_orders arrival dates."
+            "Policy uses this to estimate expected_inbound_orders arrival dates."
         ),
     )
 
@@ -182,7 +182,7 @@ class SKUState(BaseModel):
         ),
     )
 
-    # -- Reward tracking (environment writes, agent reads) -------------------
+    # -- Reward tracking (environment writes, policy reads) -------------------
 
     demand_fulfilled_today: float = Field(
         default=0.0,
@@ -262,14 +262,14 @@ class InventoryState(Observation):
         description=(
             "Ground-truth open orders tracked by the environment: (sku_id, quantity, true_arrival_day). "
             "true_arrival_day is sampled from the hidden lead time distribution at order placement. "
-            "Never exposed directly to the agent — agent only sees expected_inbound_orders."
+            "Never exposed directly to the policy — policy only sees expected_inbound_orders."
         ),
     )
 
     expected_inbound_orders: List[Tuple[str, float, int]] = Field(
         default_factory=list,
         description=(
-            "Agent-visible inbound orders: (sku_id, quantity, expected_arrival_day). "
+            "Policy-visible inbound orders: (sku_id, quantity, expected_arrival_day). "
             "expected_arrival_day = order_date + avg_lead_time at time of ordering. "
             "Will diverge from actual_inbound_orders when true lead times deviate from the average."
         ),
@@ -327,7 +327,7 @@ class InventoryState(Observation):
     insights: List[str] = Field(
         default_factory=list,
         description=(
-            "Announcements the agent can see today: every insight already published whose "
+            "Announcements the policy can see today: every insight already published whose "
             "event has not ended yet, each starting with the day it was published. "
             "Empty when insights are off."
         ),
@@ -484,7 +484,7 @@ class SKUEpisodeConfig(BaseModel):
         description=(
             "Probability that any given inbound order is lost in transit and never arrives. "
             "0.0 = all orders arrive. 0.1 = 10% chance of total loss per order. "
-            "Agent only discovers this after the expected arrival date passes with no delivery."
+            "Policy only discovers this after the expected arrival date passes with no delivery."
         ),
     )
 
@@ -507,10 +507,10 @@ class SKUEpisodeConfig(BaseModel):
 
 class InsightEvent(BaseModel):
     """
-    A disruption of the episode, announced to the agent before it starts.
+    A disruption of the episode, announced to the policy before it starts.
 
     The structured fields describe the event exactly (they come from the task's own
-    demand and lead-time curves) and stay hidden; the agent only sees `message`,
+    demand and lead-time curves) and stay hidden; the policy only sees `message`,
     from `announce_day` until `end_day`.
     """
 
@@ -526,7 +526,7 @@ class InsightEvent(BaseModel):
         description="Peak multiplier of the SKU's lead time (supplier_delay) or demand (demand_surge).",
     )
     announce_day: int = Field(ge=0, description="Day the insights are published.")
-    message: str = Field(description="The insights text the agent reads.")
+    message: str = Field(description="The insights text the policy reads.")
 
     @model_validator(mode="after")
     def validate_days(self) -> InsightEvent:
@@ -592,7 +592,7 @@ class EpisodeConfig(BaseModel):
     insights: List[InsightEvent] = Field(
         default_factory=list,
         description=(
-            "Disruptions announced to the agent ahead of time (see InsightEvent). "
+            "Disruptions announced to the policy ahead of time (see InsightEvent). "
             "Empty when insights are off."
         ),
     )

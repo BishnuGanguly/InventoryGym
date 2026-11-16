@@ -177,14 +177,14 @@ def test_any_is_reserved():
 
 
 # ---------------------------------------------------------------------------
-# Agents on a drawn task
+# Policies on a drawn task
 # ---------------------------------------------------------------------------
 
 def test_reading_the_insights_pays_on_the_drawn_task():
     seeds = range(10000, 10012)
 
-    def mean(agent):
-        return sum(E.run_episode(agent, "surprise_disruptions", s, insights=True, world=GROCERY)["score"] for s in seeds) / 12
+    def mean(policy):
+        return sum(E.run_episode(policy, "surprise_disruptions", s, insights=True, world=GROCERY)["score"] for s in seeds) / 12
 
     nothing, baseline, plan, oracle = mean("nothing"), mean("baseline"), mean("insights_plan"), mean("oracle")
     assert nothing < 0.1 < baseline < plan < oracle

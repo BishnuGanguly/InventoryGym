@@ -1,14 +1,14 @@
 """
 eval.py
 =======
-Evaluate an agent on the Pharma environment over many seeded episodes, and
-compare agents fairly.
+Evaluate a policy on the Pharma environment over many seeded episodes, and
+compare policies fairly.
 
-Run an agent (results go to results/<agent>_<split>_<n>.jsonl, one line per episode):
+Run a policy (results go to results/<policy>_<split>_<n>.jsonl, one line per episode):
 
-    python eval.py --agent baseline --split test --episodes 50
-    python eval.py --agent oracle   --split test --episodes 50
-    python eval.py --agent llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \\
+    python eval.py --policy baseline --split test --episodes 50
+    python eval.py --policy oracle   --split test --episodes 50
+    python eval.py --policy llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \\
                    --split test --episodes 10 --save-steps
 
 Compare two result files seed by seed (optionally against the oracle's):
@@ -16,13 +16,13 @@ Compare two result files seed by seed (optionally against the oracle's):
     python eval.py --compare results/llm_test_10.jsonl results/baseline_test_50.jsonl \\
                    --oracle results/oracle_test_50.jsonl
 
-Agents (see agents.py): nothing (floor), baseline (order-up-to rule),
+Policies (see policies.py): nothing (floor), baseline (order-up-to rule),
 oracle (perfect foresight, the ceiling), llm (any OpenAI-compatible server).
 
 Seeds: --split train uses tasks.TRAIN_SEEDS, --split test uses tasks.TEST_SEEDS,
 always the first N. Tune and train on train seeds only; report test seeds.
 
-The same seed gives the same world for every agent (noise is drawn at reset),
+The same seed gives the same world for every policy (noise is drawn at reset),
 so --compare looks at per-seed differences, which cancels out each seed's luck
 and gives much tighter confidence intervals than comparing two averages.
 """
@@ -44,15 +44,15 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 import inference  # noqa: E402
-from agents import (  # noqa: E402
-    Agent, BaselineAgent, LLMAgent, InsightsLLMAgent, InsightsPlanAgent, InsightsRuleAgent, NothingAgent, OracleAgent,
+from policies import (  # noqa: E402
+    Policy, BaselinePolicy, LLMPolicy, InsightsLLMPolicy, InsightsPlanPolicy, InsightsRulePolicy, NothingPolicy, OraclePolicy,
 )
 from models import InventoryAction  # noqa: E402
 from server.inventory_environment import InventoryEnvironment  # noqa: E402
 from tasks import SEED_SPLITS, compute_final_score  # noqa: E402
 from world import DEFAULT_WORLD, World, WorldError, builtin_worlds, load_world  # noqa: E402
 
-AGENTS = ("nothing", "baseline", "oracle", "llm", "baseline_insights", "insights_plan", "llm_insights")
+POLICIES = ("nothing", "baseline", "oracle", "llm", "baseline_insights", "insights_plan", "llm_insights")
 JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 # An LLM that fails this many calls in a row from the very first day is
 # misconfigured (bad token, wrong model, server down): stop instead of
@@ -64,30 +64,30 @@ MAX_INITIAL_LLM_ERRORS = 3
 # Running episodes
 # ---------------------------------------------------------------------------
 
-def make_agent(name: str, llm: Optional[Dict[str, str]] = None) -> Agent:
+def make_policy(name: str, llm: Optional[Dict[str, str]] = None) -> Policy:
     if name == "nothing":
-        return NothingAgent()
+        return NothingPolicy()
     if name == "baseline":
-        return BaselineAgent()
+        return BaselinePolicy()
     if name == "oracle":
-        return OracleAgent()
+        return OraclePolicy()
     if name == "baseline_insights":
-        return InsightsRuleAgent()
+        return InsightsRulePolicy()
     if name == "insights_plan":
-        return InsightsPlanAgent()
+        return InsightsPlanPolicy()
     if name == "llm_insights":
         llm = llm or {}
-        return InsightsLLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
+        return InsightsLLMPolicy(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
                             timeout=float(llm.get("timeout", 60.0)))
     if name == "llm":
         llm = llm or {}
-        return LLMAgent(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
+        return LLMPolicy(model=llm["model"], api_key=llm["api_key"], base_url=llm["base_url"],
                         timeout=float(llm.get("timeout", 60.0)))
-    raise ValueError(f"Unknown agent '{name}'. Choose from {AGENTS}.")
+    raise ValueError(f"Unknown policy '{name}'. Choose from {POLICIES}.")
 
 
 def run_episode(
-    agent_name: str,
+    policy_name: str,
     task_name: str,
     seed: int,
     split: str = "",
@@ -103,10 +103,10 @@ def run_episode(
     `insights` announces the disruptions ahead of time (see insights.py).
     `world` is the world the task belongs to (default the built-in pharma world).
     """
-    agent = make_agent(agent_name, llm)
+    policy = make_policy(policy_name, llm)
     env = InventoryEnvironment()
     obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
-    agent.start_episode(env)
+    policy.start_episode(env)
 
     history: List[Tuple[int, str, str]] = []
     steps: List[Dict[str, Any]] = []
@@ -117,10 +117,10 @@ def run_episode(
     while not obs.done:
         day = obs.current_date
         obs_insights = obs.insights
-        reply, error = agent.act(obs, history)
+        reply, error = policy.act(obs, history)
         # What the model itself wrote; `reply` is the
         # converted order, so check and log the model's own text.
-        model_reply = getattr(agent, "last_model_reply", None)
+        model_reply = getattr(policy, "last_model_reply", None)
         model_reply = reply if model_reply is None else model_reply
         if not error and not JSON_OBJECT.search(model_reply):
             parse_failures += 1
@@ -152,9 +152,9 @@ def run_episode(
 
     days = len(history)
     record: Dict[str, Any] = {
-        "agent": agent_name,
-        "model": (llm or {}).get("model") if agent_name in ("llm", "llm_insights") else None,
-        "action_format": getattr(agent, "action", None),
+        "policy": policy_name,
+        "model": (llm or {}).get("model") if policy_name in ("llm", "llm_insights") else None,
+        "action_format": getattr(policy, "action", None),
         "task": task_name,
         "seed": seed,
         "split": split,
@@ -179,7 +179,7 @@ def _run_job(job: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def evaluate(
-    agent_name: str,
+    policy_name: str,
     task_names: Sequence[str],
     split: str,
     episodes: int,
@@ -192,7 +192,7 @@ def evaluate(
     """Run `episodes` seeds (the first N of the split) on each task (of `world`, default pharma)."""
     seeds = list(SEED_SPLITS[split][:episodes])
     jobs = [
-        dict(agent_name=agent_name, task_name=t, seed=s, split=split, llm=llm, save_steps=save_steps, insights=insights,
+        dict(policy_name=policy_name, task_name=t, seed=s, split=split, llm=llm, save_steps=save_steps, insights=insights,
              world=world)
         for t in task_names for s in seeds
     ]
@@ -281,7 +281,7 @@ def print_summary(records: Sequence[Dict[str, Any]]) -> None:
     failures = sum(r["parse_failures"] for r in records)
     errors = sum(r["llm_errors"] for r in records)
     replies = sum(r["days"] for r in records)
-    if records and records[0]["agent"] in ("llm", "llm_insights"):
+    if records and records[0].get("policy") in ("llm", "llm_insights"):
         print(f"\nreplies without any JSON object: {failures}/{replies} ({failures / max(replies, 1):.1%}); "
               f"failed LLM calls: {errors}")
 
@@ -299,7 +299,7 @@ def print_comparison(result: Dict[str, Dict[str, float]], names: Tuple[str, str]
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--agent", choices=AGENTS)
+    parser.add_argument("--policy", choices=POLICIES)
     parser.add_argument("--split", choices=sorted(SEED_SPLITS), default="test")
     parser.add_argument("--episodes", type=int, default=20, help="seeds per task (first N of the split)")
     parser.add_argument("--world", default=DEFAULT_WORLD,
@@ -307,10 +307,10 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                              "(.yaml/.json) describing your own products, storage and tasks; default pharma")
     parser.add_argument("--tasks", default="all", help="comma-separated task names of the world, or 'all'")
     parser.add_argument("--workers", type=int, default=None,
-                        help="parallel processes (default: CPU count for rule agents, 1 for llm)")
+                        help="parallel processes (default: CPU count for rule policies, 1 for llm)")
     parser.add_argument("--save-steps", action="store_true", help="also store every day's reply and reward")
     parser.add_argument("--insights", action="store_true",
-                        help="give the agent insights: each disruption is announced 5 to 10 days ahead")
+                        help="give the policy insights: each disruption is announced 5 to 10 days ahead")
     parser.add_argument("--out", type=Path, help="output .jsonl path")
     parser.add_argument("--model", default=inference.MODEL_NAME, help="llm: model name")
     parser.add_argument("--base-url", default=inference.API_BASE_URL, help="llm: OpenAI-compatible endpoint")
@@ -327,8 +327,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         oracle = read_jsonl(args.oracle) if args.oracle else None
         print_comparison(paired_comparison(candidate, reference, oracle), (args.compare[0].stem, args.compare[1].stem))
         return
-    if not args.agent:
-        parser.error("--agent is required unless --compare is used")
+    if not args.policy:
+        parser.error("--policy is required unless --compare is used")
 
     try:
         world = load_world(args.world)
@@ -342,16 +342,16 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         parser.error(f"unknown task(s) {unknown} in world '{world.name}'; choose from {sorted(world.tasks)}")
 
     llm = None
-    if args.agent in ("llm", "llm_insights"):
+    if args.policy in ("llm", "llm_insights"):
         # Local servers such as Ollama ignore the key, but the client needs a non-empty one.
         api_key = args.api_key or os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "not-needed"
         llm = {"model": args.model, "base_url": args.base_url, "api_key": api_key,
                "timeout": args.timeout}
     workers = args.workers or (1 if llm else min(os.cpu_count() or 1, 8))
 
-    records = evaluate(args.agent, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.insights,
+    records = evaluate(args.policy, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.insights,
                        None if builtin_default else world)
-    name = args.agent if not llm else args.agent + "_" + re.sub(r"[^A-Za-z0-9.]+", "-", args.model)
+    name = args.policy if not llm else args.policy + "_" + re.sub(r"[^A-Za-z0-9.]+", "-", args.model)
     if not builtin_default:
         name = re.sub(r"[^A-Za-z0-9.]+", "-", world.name) + "_" + name
     insights = "_insights" if args.insights else ""

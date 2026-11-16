@@ -355,7 +355,7 @@ def test_partial_episode_counts_unplayed_days_as_zero():
 
 
 # ---------------------------------------------------------------------------
-# Randomness: on in the tasks, and independent of the agent's actions
+# Randomness: on in the tasks, and independent of the policy's actions
 # ---------------------------------------------------------------------------
 
 from tasks import DEMAND_NOISE_CV, LEAD_TIME_NOISE_STD  # noqa: E402
@@ -378,7 +378,7 @@ def test_demand_is_noisy_around_the_curve():
 
 
 @pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
-def test_same_seed_same_world_whatever_the_agent_does(task_name):
+def test_same_seed_same_world_whatever_the_policy_does(task_name):
     """Regression: lead-time noise used to be drawn only for ordered SKUs, which
     shifted every later random number, so ordering insulin changed paracetamol demand."""
     lazy, _, _ = _play(task_name, 9, lambda s: {})

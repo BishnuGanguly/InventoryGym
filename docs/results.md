@@ -1,27 +1,27 @@
 # Results on the pharma world
 
-Reference agents, what the insights are worth, and small LLMs run locally. All numbers are on test seeds of the pharma world.
+Reference policies, what the insights are worth, and small LLMs run locally. All numbers are on test seeds of the pharma world.
 
 ## Baselines
 
-Mean final score on the first 50 test seeds per task (`python eval.py --agent <agent> --split test --episodes 50`), with the 95% confidence interval of the mean:
+Mean final score on the first 50 test seeds per task (`python eval.py --policy <policy> --split test --episodes 50`), with the 95% confidence interval of the mean:
 
-| Agent | Supply Chain | Flu Season | Epidemic Two Waves |
+| Policy | Supply Chain | Flu Season | Epidemic Two Waves |
 |---|:---:|:---:|:---:|
 | Order nothing (floor) | 0.003 | 0.003 | 0.003 |
 | Baseline (order-up-to rule) | 0.846 ± 0.008 | 0.900 ± 0.004 | 0.856 ± 0.009 |
 | Oracle (perfect foresight, ceiling) | 0.931 ± 0.002 | 0.931 ± 0.002 | 0.932 ± 0.002 |
 
-The oracle is not 1.0 because episodes start with almost no stock: the first days are lost for every agent until a first delivery can arrive. Results for small LLMs are in [LLM results](#llm-results).
+The oracle is not 1.0 because episodes start with almost no stock: the first days are lost for every policy until a first delivery can arrive. Results for small LLMs are in [LLM results](#llm-results).
 
 
 ## Insights: disruptions announced ahead of time
 
-The baseline reaches about 93% of the oracle because the observation holds only clean numbers, and turning numbers into orders is solved arithmetic. With **insights**, the agent also reads text announcing each disruption a few days before it starts. That is information the baseline cannot use, and reading it is something a language model can do.
+The baseline reaches about 93% of the oracle because the observation holds only clean numbers, and turning numbers into orders is solved arithmetic. With **insights**, the policy also reads text announcing each disruption a few days before it starts. That is information the baseline cannot use, and reading it is something a language model can do.
 
 `insights.py` reads each task's own demand and lead-time curves, turns every disruption into an event (a supplier delay where lead times rise, a demand surge where demand reaches 1.5× normal or more), and publishes it **5–10 days before it starts** (drawn per event from the seed, never before day 0). The world itself is unchanged: insights never alters demand, lead times or noise, and the baseline scores exactly the same with or without it.
 
-| Level | What the agent reads | Example |
+| Level | What the policy reads | Example |
 |---|---|---|
 | `0` | No insights (the original environment, the default) | — |
 | `1` | One fixed template with exact days and multiplier | *SUPPLIER DELAY - insulin: orders placed from day 15 to day 25 will take about 3.7x the normal lead time.* |
@@ -29,11 +29,11 @@ The baseline reaches about 93% of the oracle because the observation holds only 
 
 The observation's `insights` list holds every item already published whose event has not ended, each prefixed with its publication day (`"Day 9: ..."`). It also appears in the LLM report when not empty. Use it with `eval.py --insights` or `env.reset(task_name=..., seed=..., insights=True)`; the [surprise tasks](pharma-world.md#surprise-tasks-products-and-days-drawn-per-seed) draw the disrupted SKUs and days per seed. False alarms and irrelevant insights are planned for later.
 
-**Hybrid agent (`llm_insights`).** The baseline does the arithmetic, and the LLM only reads the insights and answers with **extra safety days per SKU** (`inference.INSIGHTS_SYSTEM_PROMPT`), e.g. `{"insulin": 6, "paracetamol": 0, ...}`. The extra days are clipped to 0–15 and so that total cover stays within 18 days (storage holds about 21). On days without insights the model is not called, so the agent plays exactly like the baseline. A confused model can therefore cost little, and any gain from the insights lift the score *above* the baseline.
+**Hybrid policy (`llm_insights`).** The baseline does the arithmetic, and the LLM only reads the insights and answers with **extra safety days per SKU** (`inference.INSIGHTS_SYSTEM_PROMPT`), e.g. `{"insulin": 6, "paracetamol": 0, ...}`. The extra days are clipped to 0–15 and so that total cover stays within 18 days (storage holds about 21). On days without insights the model is not called, so the policy plays exactly like the baseline. A confused model can therefore cost little, and any gain from the insights lift the score *above* the baseline.
 
-**Reference: perfect reading of the insights (`baseline_insights`).** This agent reads the exact event behind each published item (not the text) and adds extra days by a fixed rule. Like the oracle, it is a reference: it shows what the insights are worth, and it is a natural teacher for fine-tuning. On the first 50 test seeds per task:
+**Reference: perfect reading of the insights (`baseline_insights`).** This policy reads the exact event behind each published item (not the text) and adds extra days by a fixed rule. Like the oracle, it is a reference: it shows what the insights are worth, and it is a natural teacher for fine-tuning. On the first 50 test seeds per task:
 
-| Agent | Supply Chain | Flu Season | Epidemic Two Waves | Gap to oracle closed |
+| Policy | Supply Chain | Flu Season | Epidemic Two Waves | Gap to oracle closed |
 |---|:---:|:---:|:---:|:---:|
 | Baseline (ignores insights) | 0.846 ± 0.008 | 0.900 ± 0.004 | 0.856 ± 0.009 | — |
 | `baseline_insights`, with insights | 0.898 ± 0.005 | 0.904 ± 0.004 | 0.907 ± 0.004 | 56% |
@@ -41,19 +41,19 @@ The observation's `insights` list holds every item already published whose event
 
 The rule reads the events, not the text, so the wording does not matter to it. The open question for an LLM is how much of that +0.036 it recovers from the text alone.
 
-**Reference: an inventory plan from the insights (`insights_plan`).** `baseline_insights` keeps the baseline and adds days to it. `insights_plan` (`agents.insights_plan_orders`) instead replaces, for every SKU with published insights, the two estimates the baseline can only correct after a disruption shows:
+**Reference: an inventory plan from the insights (`insights_plan`).** `baseline_insights` keeps the baseline and adds days to it. `insights_plan` (`policies.insights_plan_orders`) instead replaces, for every SKU with published insights, the two estimates the baseline can only correct after a disruption shows:
 
 - **Lead time.** An order placed during a published delay takes the normal lead time × the delay's multiplier. Stock has to last until the first later order can arrive, so the plan covers the earliest arrival of any order placed from tomorrow on: the normal lead time before a delay, and up to the delay's end or the slow lead time (whichever is sooner) just before and during one.
 - **Demand.** Normal demand is past sales with the published surges divided out, and each coming day is forecast as normal demand × that day's multiple, so the forecast rises ahead of a wave and falls after its peak instead of lagging it.
 
-The target is the forecast demand over that cover period plus 3 safety days, capped at the SKU's share of its storage pool plus what is consumed while the order travels. It uses only the published events' fields and the observation (the normal lead time is the first report's `avg_lead_time`), SKUs without insights are ordered exactly as the baseline orders them, and without insights the agent *is* the baseline.
+The target is the forecast demand over that cover period plus 3 safety days, capped at the SKU's share of its storage pool plus what is consumed while the order travels. It uses only the published events' fields and the observation (the normal lead time is the first report's `avg_lead_time`), SKUs without insights are ordered exactly as the baseline orders them, and without insights the policy *is* the baseline.
 
-| Agent (50 test seeds per task) | Supply Chain | Flu Season | Epidemic Two Waves | Gap to oracle closed |
+| Policy (50 test seeds per task) | Supply Chain | Flu Season | Epidemic Two Waves | Gap to oracle closed |
 |---|:---:|:---:|:---:|:---:|
 | `baseline_insights`, with insights | 0.898 ± 0.005 | 0.904 ± 0.004 | 0.907 ± 0.004 | 56% |
 | `insights_plan`, with insights | 0.907 ± 0.003 | 0.911 ± 0.002 | 0.907 ± 0.003 | 64% |
 
-| Agent (50 test seeds per task) | Surprise Delays | Surprise Outbreak | Surprise Epidemic | Gap to oracle closed |
+| Policy (50 test seeds per task) | Surprise Delays | Surprise Outbreak | Surprise Epidemic | Gap to oracle closed |
 |---|:---:|:---:|:---:|:---:|
 | `baseline_insights`, with insights | 0.898 ± 0.006 | 0.885 ± 0.014 | 0.880 ± 0.016 | 30% |
 | `insights_plan`, with insights | 0.909 ± 0.003 | 0.891 ± 0.008 | 0.892 ± 0.009 | 47% |
@@ -63,9 +63,9 @@ Seed by seed, `insights_plan` beats `baseline_insights` by +0.006 ± 0.002 on th
 
 ## LLM results
 
-Small models run locally with Ollama (`local_llm/run_local_llm.py`, temperature 0.2) on test seeds. Every run below is scored under the **current** reward (fill weighted by `stockout_penalty`): each episode saved the exact order sent every day, and since a seed fixes the world, replaying those orders in the current environment reproduces the run exactly (the same fill rate for every SKU on every day) and gives its score under today's reward. The reference agents are scored on the same seeds. The prompts also changed between runs (each run used the prompt of its answer format at the time); rescoring changes only the reward, not what the model saw.
+Small models run locally with Ollama (`local_llm/run_local_llm.py`, temperature 0.2) on test seeds. Every run below is scored under the **current** reward (fill weighted by `stockout_penalty`): each episode saved the exact order sent every day, and since a seed fixes the world, replaying those orders in the current environment reproduces the run exactly (the same fill rate for every SKU on every day) and gives its score under today's reward. The reference policies are scored on the same seeds. The prompts also changed between runs (each run used the prompt of its answer format at the time); rescoring changes only the reward, not what the model saw.
 
-The LLM agent now has one answer format, `adjust`. The `units` and `days` rows are from two earlier formats that were removed because of what these runs showed; they are kept as the record of why.
+The LLM policy now has one answer format, `adjust`. The `units` and `days` rows are from two earlier formats that were removed because of what these runs showed; they are kept as the record of why.
 
 | Model | Answer format | Insights | Episodes | Score | Baseline | +2 days for every SKU | Oracle |
 |---|---|---|---|:---:|:---:|:---:|:---:|

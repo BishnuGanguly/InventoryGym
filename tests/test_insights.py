@@ -1,4 +1,4 @@
-"""Tests for insights (insights.py), the insights-aware agents (agents.py) and their prompt (inference.py)."""
+"""Tests for insights (insights.py), the insights-aware policies (policies.py) and their prompt (inference.py)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 import eval as E
 import inference
-from agents import MAX_COVER_DAYS, InsightsLLMAgent, InsightsRuleAgent, baseline_lead_time, baseline_policy
+from policies import MAX_COVER_DAYS, InsightsLLMPolicy, InsightsRulePolicy, baseline_lead_time, baseline_policy
 from models import InventoryAction
 from insights import ANNOUNCE_DAYS_AHEAD, add_insights, find_events, visible_insights
 from server.inventory_environment import InventoryEnvironment
@@ -102,7 +102,7 @@ def test_report_includes_insights_only_when_there_is_some():
 
 
 # ---------------------------------------------------------------------------
-# Agents
+# Policies
 # ---------------------------------------------------------------------------
 
 def test_extra_days_are_capped_for_storage():
@@ -120,16 +120,16 @@ def test_extra_days_are_capped_for_storage():
 
 
 @pytest.mark.parametrize("task_name", TASKS)
-def test_insights_rule_agent_beats_the_baseline(task_name):
+def test_insights_rule_policy_beats_the_baseline(task_name):
     baseline = E.run_episode("baseline", task_name, SEED, insights=True)["score"]
     assert E.run_episode("baseline_insights", task_name, SEED, insights=True)["score"] > baseline
-    # Without insights the agent is the baseline.
+    # Without insights the policy is the baseline.
     assert E.run_episode("baseline_insights", task_name, SEED)["score"] == E.run_episode("baseline", task_name, SEED)["score"]
 
 
-def test_insights_llm_agent_only_calls_the_model_on_insights_days(monkeypatch):
+def test_insights_llm_policy_only_calls_the_model_on_insights_days(monkeypatch):
     client, calls = fake_client('{"insulin": 6, "Amlodipine": 2, "HCQ": "lots", "aspirin": 9}')
-    monkeypatch.setattr(E, "make_agent", lambda name, llm=None: InsightsLLMAgent("stub", "x", "x", client=client))
+    monkeypatch.setattr(E, "make_policy", lambda name, llm=None: InsightsLLMPolicy("stub", "x", "x", client=client))
     record = E.run_episode("custom", "supply_chain_broken", SEED, insights=True, save_steps=True)
     insights_days = [s["day"] for s in record["steps"] if s["insights"]]
     assert len(calls) == len(insights_days) > 0
@@ -139,27 +139,27 @@ def test_insights_llm_agent_only_calls_the_model_on_insights_days(monkeypatch):
     assert calls[0]["messages"][0]["content"] == inference.INSIGHTS_SYSTEM_PROMPT
 
 
-def test_insights_llm_agent_without_insights_is_the_baseline():
+def test_insights_llm_policy_without_insights_is_the_baseline():
     client, calls = fake_client()
     env = InventoryEnvironment()
     obs = env.reset(task_name="flu_season", seed=SEED)
     for _ in range(4):
         obs = env.step(InventoryAction(message="{}"))
-    agent = InsightsLLMAgent("stub", "x", "x", client=client)
-    reply, error = agent.act(obs, [])
+    policy = InsightsLLMPolicy("stub", "x", "x", client=client)
+    reply, error = policy.act(obs, [])
     assert json.loads(reply) == baseline_policy(obs) and error is None and calls == []
 
 
-def test_insights_llm_agent_applies_the_reply_and_survives_failures():
+def test_insights_llm_policy_applies_the_reply_and_survives_failures():
     env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=SEED, insights=True)
     while not obs.insights:
         obs = env.step(InventoryAction(message=json.dumps(baseline_policy(obs))))
     client, _ = fake_client('Insulin needs more: {"insulin": 5, "paracetamol": 0}')
-    reply, error = InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    reply, error = InsightsLLMPolicy("stub", "x", "x", client=client).act(obs, [])
     assert error is None and json.loads(reply) == baseline_policy(obs, extra_days={"insulin": 5})
     client, _ = fake_client(fail=True)
-    reply, error = InsightsLLMAgent("stub", "x", "x", client=client).act(obs, [])
+    reply, error = InsightsLLMPolicy("stub", "x", "x", client=client).act(obs, [])
     assert "TimeoutError" in error and json.loads(reply) == baseline_policy(obs)
 
 
@@ -169,17 +169,17 @@ def test_parse_extra_days_accepts_aliases_and_skips_junk():
     assert inference.parse_extra_days(obs, reply) == {"insulin": 3.0, "bp_medication": 2.5, "hydroxychloroquine": 4.0}
 
 
-def test_rule_agent_reads_events_from_the_environment():
+def test_rule_policy_reads_events_from_the_environment():
     env = InventoryEnvironment()
     env.reset(task_name="flu_season", seed=SEED, insights=True)
-    agent = InsightsRuleAgent()
-    agent.start_episode(env)
-    assert agent._events == env._episode_config.insights
+    policy = InsightsRulePolicy()
+    policy.start_episode(env)
+    assert policy._events == env._episode_config.insights
 
 
 def test_command_line_insights_flag(tmp_path):
     out = tmp_path / "insights.jsonl"
-    E.main(["--agent", "baseline_insights", "--insights", "--episodes", "1", "--tasks", "flu_season",
+    E.main(["--policy", "baseline_insights", "--insights", "--episodes", "1", "--tasks", "flu_season",
             "--workers", "1", "--out", str(out)])
     assert json.loads(out.read_text())["insights"] is True
 

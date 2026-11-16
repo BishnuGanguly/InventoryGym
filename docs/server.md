@@ -8,7 +8,7 @@ The Docker image sets `ENABLE_WEB_INTERFACE=true`, so the server also serves Ope
 
 - **Reset** starts a new episode, then **Step** advances one day.
 - Type orders in either box: **Orders** takes a JSON object such as `{"insulin": 40}`, and **Message** takes free text containing one, as an LLM would reply.
-- The raw JSON shows the full `InventoryState`, including ground-truth fields such as `actual_inbound_orders` that the agent's prompt in `inference.py` leaves out.
+- The raw JSON shows the full `InventoryState`, including ground-truth fields such as `actual_inbound_orders` that the policy's prompt in `inference.py` leaves out.
 - The Reset button takes no parameters, so it loads the small 30-day, two-SKU default episode. To play one of the three tasks, reset through the API and keep using the page:
 
 ```bash
@@ -41,13 +41,13 @@ The dashboard is served at `/dashboard` (the address the Hugging Face Space open
    - **Tables** for storage pools, products, tasks and events. Amounts and days are a number or a range such as `80-120`, drawn per seed. An event's product can be a product id, `any` (a different product each seed) or `milk|rice` (one of these).
    - **File** for everything a world file can hold (per-task storage, draws shared by several events, the words insights use), or **upload** a `.yaml` file.
    - A card says whether the inventory is valid and, if not, what is wrong and where. **Preview a task** draws what the task does to each product and lists the insights it would produce.
-2. **Run an episode.** Choose a task and an agent (a line under the agent says what it does), a seed (🎲 draws a new one) and whether insights are on, then **Run episode** (**Stop** cancels). A progress bar shows the run, and the results appear when it starts. *More options* holds the pause per day and the LLM settings.
-   - **Agents:** the baseline rule, the insights plan (a reference that reads the insights perfectly), the oracle, and an LLM that adjusts the baseline's orders. The other reference agents (`nothing`, `baseline_insights`, `llm_insights`) are in `eval.py`.
-   - **Charts, redrawn every simulated day:** the score so far against the baseline and the oracle on the same episode; how full each storage pool is, with wasted deliveries marked; the insights feed; and for the chosen product, stock against demand, lead times and orders. **Orange is hidden truth the agent never sees**: shaded bands are the days of a disruption, and a dotted line marks the day it was announced.
-   - At the end a line says how much of the gap between the baseline and the oracle the agent closed. In the score chart, the shaded zone between the baseline and the oracle is the room to improve.
-3. **Compare agents.** Several agents on the same test seeds of one task: a chart and a table with the mean score and a 95% interval, the difference to the baseline seed by seed, and the share of the gap to the oracle closed. the LLM agent runs at most 3 episodes here.
+2. **Run an episode.** Choose a task and a policy (a line under the policy says what it does), a seed (🎲 draws a new one) and whether insights are on, then **Run episode** (**Stop** cancels). A progress bar shows the run, and the results appear when it starts. *More options* holds the pause per day and the LLM settings.
+   - **Policies:** the baseline rule, the insights plan (a reference that reads the insights perfectly), the oracle, and an LLM that adjusts the baseline's orders. The other reference policies (`nothing`, `baseline_insights`, `llm_insights`) are in `eval.py`.
+   - **Charts, redrawn every simulated day:** the score so far against the baseline and the oracle on the same episode; how full each storage pool is, with wasted deliveries marked; the insights feed; and for the chosen product, stock against demand, lead times and orders. **Orange is hidden truth the policy never sees**: shaded bands are the days of a disruption, and a dotted line marks the day it was announced.
+   - At the end a line says how much of the gap between the baseline and the oracle the policy closed. In the score chart, the shaded zone between the baseline and the oracle is the room to improve.
+3. **Compare policies.** Several policies on the same test seeds of one task: a chart and a table with the mean score and a 95% interval, the difference to the baseline seed by seed, and the share of the gap to the oracle closed. the LLM policy runs at most 3 episodes here.
 
-**LLM agents.** Paste a token under *More options → LLM settings*. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against the account of the token you pasted. The dashboard never uses the server's own `HF_TOKEN` or `API_KEY`: it is a public page, so a visitor can only spend their own credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. A token is used for the run only and is never stored.
+**LLM policies.** Paste a token under *More options → LLM settings*. Calls go through [Inference Providers](https://huggingface.co/docs/inference-providers) and count against the account of the token you pasted. The dashboard never uses the server's own `HF_TOKEN` or `API_KEY`: it is a public page, so a visitor can only spend their own credits. `MODEL_NAME` sets the default model and `API_BASE_URL` points it at any OpenAI-compatible endpoint. A token is used for the run only and is never stored.
 
 **Limits.** A world typed or uploaded in the dashboard is parsed with the safe YAML loader and may have at most 30 products, 20 tasks, 180 days and 100 kB. The server never opens a file path sent from the browser. Each run builds its own environment, so viewers never share an episode.
 
@@ -70,7 +70,7 @@ With neither, a small 30-day two-SKU default episode is used.
 | `API_BASE_URL` | `https://router.huggingface.co/v1` | LLM API endpoint |
 | `MODEL_NAME` | `Qwen/Qwen2.5-72B-Instruct` | Model identifier |
 | `HF_TOKEN` | — | HuggingFace API key for `inference.py` and `eval.py` on your own machine. The dashboard never reads it. |
-| `MAX_CONCURRENT_ENVS` | `8` | How many agents can hold a session (WebSocket) at once. Each session has its own environment and episode. |
+| `MAX_CONCURRENT_ENVS` | `8` | How many policies can hold a session (WebSocket) at once. Each session has its own environment and episode. |
 | `ENV_BASE_URL` | `http://localhost:8000` | Server URL |
 | `LOCAL_IMAGE_NAME` | — | Run the server from this Docker image instead of `ENV_BASE_URL` |
 | `TASK_SEED` | `42` | Seed for task generation and environment noise |

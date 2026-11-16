@@ -1,5 +1,5 @@
 """
-InventoryGym: an inventory-management environment for training and testing LLM agents.
+InventoryGym: an inventory-management environment for training and testing LLM policies.
 
     from inventorygym import InventoryEnvClient, InventoryAction
 

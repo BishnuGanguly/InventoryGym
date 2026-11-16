@@ -1,4 +1,4 @@
-"""Tests for the insights plan reference (agents.insights_plan_orders, InsightsPlanAgent)."""
+"""Tests for the insights plan reference (policies.insights_plan_orders, InsightsPlanPolicy)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import statistics
 import pytest
 
 import eval as E
-from agents import InsightsPlanAgent, baseline_policy, insights_plan_orders
+from policies import InsightsPlanPolicy, baseline_policy, insights_plan_orders
 from models import InventoryState, InsightEvent, InventoryAction, SKUState, StoragePoolState
 from server.inventory_environment import InventoryEnvironment
 from tasks import FIXED_TASKS, SURPRISE_TASKS, TEST_SEEDS
@@ -89,7 +89,7 @@ def test_forecast_rises_before_a_surge_and_falls_after_its_peak():
 def test_normal_demand_is_sales_with_the_surge_divided_out():
     # Sales doubled exactly as the published surge says: normal demand is still 10 a day.
     event = surge(0, 5, 10, multiplier=2.0)
-    from agents import _surge_profile
+    from policies import _surge_profile
     history = [10.0 * _surge_profile(event, day) for day in range(30)]
     orders = insights_plan_orders(state(day=30, history=history, demand=15.0), [event], LEAD)
     assert orders["a"] == round(10.0 * (5 + 3))
@@ -106,35 +106,35 @@ def test_target_is_capped_by_the_skus_share_of_its_pool():
 
 
 # ---------------------------------------------------------------------------
-# The agent in the environment
+# The policy in the environment
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("task_name", TASKS)
-def test_agent_without_insights_plays_exactly_like_the_baseline(task_name):
+def test_policy_without_insights_plays_exactly_like_the_baseline(task_name):
     assert (E.run_episode("insights_plan", task_name, TEST_SEEDS[0], save_steps=True)["steps"]
             == E.run_episode("baseline", task_name, TEST_SEEDS[0], save_steps=True)["steps"])
 
 
-def test_agent_keeps_the_first_reported_lead_time_as_normal():
+def test_policy_keeps_the_first_reported_lead_time_as_normal():
     env = InventoryEnvironment()
     obs = env.reset(task_name="supply_chain_broken", seed=TEST_SEEDS[0], insights=True)
-    agent = InsightsPlanAgent()
-    agent.start_episode(env)
+    policy = InsightsPlanPolicy()
+    policy.start_episode(env)
     first = {k: s.avg_lead_time for k, s in obs.skus.items()}
     while not obs.done:
-        reply, error = agent.act(obs, [])
+        reply, error = policy.act(obs, [])
         assert error is None
         obs = env.step(InventoryAction(message=reply))
-    assert agent._normal_lead_time == first
+    assert policy._normal_lead_time == first
     assert obs.skus["insulin"].avg_lead_time > first["insulin"]      # delayed deliveries raised the average
-    agent.start_episode(env)
-    assert agent._normal_lead_time == {}
+    policy.start_episode(env)
+    assert policy._normal_lead_time == {}
 
 
 @pytest.mark.parametrize("tasks", [FIXED_TASKS, SURPRISE_TASKS], ids=["fixed", "surprise"])
 def test_plan_beats_the_baseline_and_the_extra_days_rule(tasks):
-    def mean(agent):
-        return statistics.fmean(E.run_episode(agent, t, s, insights=True)["score"]
+    def mean(policy):
+        return statistics.fmean(E.run_episode(policy, t, s, insights=True)["score"]
                                 for t in tasks for s in TEST_SEEDS[:6])
     plan, rule, baseline = mean("insights_plan"), mean("baseline_insights"), mean("baseline")
     assert plan > rule > baseline
@@ -142,8 +142,8 @@ def test_plan_beats_the_baseline_and_the_extra_days_rule(tasks):
 
 
 def test_plan_wastes_less_than_the_extra_days_rule():
-    def wasted(agent):
-        return sum(E.run_episode(agent, t, s, insights=True)["units_wasted"]
+    def wasted(policy):
+        return sum(E.run_episode(policy, t, s, insights=True)["units_wasted"]
                    for t in SURPRISE_TASKS for s in TEST_SEEDS[:6])
     assert wasted("insights_plan") < wasted("baseline_insights")
 
@@ -151,10 +151,10 @@ def test_plan_wastes_less_than_the_extra_days_rule():
 def test_orders_are_valid_json_for_the_environment():
     env = InventoryEnvironment()
     obs = env.reset(task_name="surprise_epidemic", seed=TEST_SEEDS[1], insights=True)
-    agent = E.make_agent("insights_plan")
-    agent.start_episode(env)
+    policy = E.make_policy("insights_plan")
+    policy.start_episode(env)
     for _ in range(25):
-        reply, _ = agent.act(obs, [])
+        reply, _ = policy.act(obs, [])
         orders = json.loads(reply)
         assert all(sku in obs.skus and qty >= 1 for sku, qty in orders.items())
         obs = env.step(InventoryAction(message=reply))

@@ -4,18 +4,18 @@ Describe your own inventory in a file. The complete field reference is at the to
 
 ## Your own inventory: world files
 
-The products, storage and tasks of the pharma world are not hard-coded: they live in a **world file**, [`worlds/pharma.yaml`](../worlds/pharma.yaml). Describe your own inventory in the same format and every agent, the insights and `eval.py` work on it:
+The products, storage and tasks of the pharma world are not hard-coded: they live in a **world file**, [`worlds/pharma.yaml`](../worlds/pharma.yaml). Describe your own inventory in the same format and every policy, the insights and `eval.py` work on it:
 
 ```bash
-uv run python eval.py --world examples/worlds/grocery.yaml --agent baseline --episodes 20
-uv run python eval.py --world examples/worlds/grocery.yaml --agent oracle   --episodes 20 --insights
+uv run python eval.py --world examples/worlds/grocery.yaml --policy baseline --episodes 20
+uv run python eval.py --world examples/worlds/grocery.yaml --policy oracle   --episodes 20 --insights
 ```
 
 A world file has four parts (the complete reference is at the top of [`world.py`](../world.py), and [`examples/worlds/grocery.yaml`](../examples/worlds/grocery.yaml) is a worked example):
 
 ```yaml
 name: my_store
-business: a neighbourhood grocery store   # who the agent works for (used in the prompts)
+business: a neighbourhood grocery store   # who the policy works for (used in the prompts)
 days: 45
 storage:                                  # any number of pools, any names
   fridge:  {capacity_days: 10, cold_chain: true}

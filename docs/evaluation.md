@@ -1,30 +1,30 @@
-# Evaluating an agent
+# Evaluating a policy
 
-`eval.py`: run any agent over many seeded episodes and compare agents seed by seed.
+`eval.py`: run any policy over many seeded episodes and compare policies seed by seed.
 
-## Evaluating an agent
+## Evaluating a policy
 
-`eval.py` plays an agent over many seeded episodes and reports the mean score per task. It runs the environment in-process (no server needed), and rule-based agents run in parallel.
+`eval.py` plays a policy over many seeded episodes and reports the mean score per task. It runs the environment in-process (no server needed), and rule-based policies run in parallel.
 
 ```bash
-uv run python eval.py --agent baseline --split test --episodes 50   # -> results/baseline_test_50.jsonl
-uv run python eval.py --agent oracle   --split test --episodes 50
+uv run python eval.py --policy baseline --split test --episodes 50   # -> results/baseline_test_50.jsonl
+uv run python eval.py --policy oracle   --split test --episodes 50
 
 # Any OpenAI-compatible model, e.g. a local Ollama server (no API limits):
-uv run python eval.py --agent llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \
+uv run python eval.py --policy llm --model qwen2.5:3b --base-url http://localhost:11434/v1 \
                       --split test --episodes 10 --save-steps
 ```
 
-LLM agents answer with adjustment days: extra days of stock on top of the baseline's order (see [What the agent sees and how it answers](observation-and-answers.md)). With `--save-steps`, each step stores the model's own reply (`reply`) and the units actually sent (`orders_sent`).
+LLM policies answer with adjustment days: extra days of stock on top of the baseline's order (see [What the policy sees and how it answers](observation-and-answers.md)). With `--save-steps`, each step stores the model's own reply (`reply`) and the units actually sent (`orders_sent`).
 
 **Running a model on your own computer:** see [`local_llm/README.md`](../local_llm/README.md). One command, e.g. `uv run python local_llm/run_local_llm.py --model qwen2.5:3b`, sets up the model with Ollama the first time and runs it against the baseline and oracle on the same seeds.
 
-**Agents** (`agents.py`): `nothing` (the floor), `baseline` (an order-up-to rule), `oracle` (reads the episode's hidden demand and lead times and plans just-in-time deliveries; the ceiling, never something to train against), `llm` (the same prompt as `inference.py`), and, for insights (`--insights` or `2`), `baseline_insights` and `insights_plan` (perfect reading of the insights with an extra-days rule and with an inventory plan; references) and `llm_insights` (the hybrid: the LLM reads the insights, the baseline orders).
+**Policies** (`policies.py`): `nothing` (the floor), `baseline` (an order-up-to rule), `oracle` (reads the episode's hidden demand and lead times and plans just-in-time deliveries; the ceiling, never something to train against), `llm` (the same prompt as `inference.py`), and, for insights (`--insights` or `2`), `baseline_insights` and `insights_plan` (perfect reading of the insights with an extra-days rule and with an inventory plan; references) and `llm_insights` (the hybrid: the LLM reads the insights, the baseline orders).
 
 ```bash
-uv run python eval.py --agent baseline_insights --insights --split test --episodes 50
-uv run python eval.py --agent insights_plan     --insights --split test --episodes 50 --tasks surprise_delays,surprise_outbreak,surprise_epidemic
-uv run python eval.py --agent llm_insights --insights --model qwen2.5:3b --base-url http://localhost:11434/v1 \
+uv run python eval.py --policy baseline_insights --insights --split test --episodes 50
+uv run python eval.py --policy insights_plan     --insights --split test --episodes 50 --tasks surprise_delays,surprise_outbreak,surprise_epidemic
+uv run python eval.py --policy llm_insights --insights --model qwen2.5:3b --base-url http://localhost:11434/v1 \
                       --split test --episodes 10 --save-steps
 ```
 
@@ -32,7 +32,7 @@ uv run python eval.py --agent llm_insights --insights --model qwen2.5:3b --base-
 
 **Output:** one JSON line per episode, with its score, average fill rate, stockout SKU-days, overflow days, units wasted and, for LLMs, how many replies contained no JSON and how many calls failed. `--save-steps` also stores every day's reply and reward.
 
-**Comparing agents:** the same seed gives the same world to every agent, so compare seed by seed:
+**Comparing policies:** the same seed gives the same world to every policy, so compare seed by seed:
 
 ```bash
 uv run python eval.py --compare results/llm_qwen2.5-3b_test_10.jsonl results/baseline_test_50.jsonl \

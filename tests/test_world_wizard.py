@@ -119,10 +119,10 @@ def test_only_the_chosen_scenarios_are_built():
     assert list(load_world(build(scenarios=[W.SC_CALM, W.SC_BOTH])).tasks) == ["calm_weeks", "double_trouble"]
 
 
-def test_agents_can_play_the_built_inventory_and_the_insights_pays():
+def test_policies_can_play_the_built_inventory_and_the_insights_pays():
     world = load_world(build())
-    def mean(agent):
-        return sum(E.run_episode(agent, "double_trouble", s, insights=True, world=world)["score"] for s in range(10000, 10008)) / 8
+    def mean(policy):
+        return sum(E.run_episode(policy, "double_trouble", s, insights=True, world=world)["score"] for s in range(10000, 10008)) / 8
     nothing, baseline, plan = mean("nothing"), mean("baseline"), mean("insights_plan")
     assert nothing < 0.2 < baseline < plan
 

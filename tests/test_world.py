@@ -254,7 +254,7 @@ def test_command_line_rejects_bad_worlds_and_tasks(capsys):
         (["--world", str(GROCERY), "--tasks", "flu_season"], "unknown task(s) ['flu_season'] in world 'grocery'"),
     ]:
         with pytest.raises(SystemExit):
-            E.main(["--agent", "baseline", *argv])
+            E.main(["--policy", "baseline", *argv])
         assert message in capsys.readouterr().err
 
 
@@ -267,5 +267,5 @@ def test_an_edited_copy_of_pharma_is_its_own_world(tmp_path, monkeypatch):
     monkeypatch.setattr(E, "evaluate", lambda *args: seen.setdefault("world", args[8]) and [])
     monkeypatch.setattr(E, "write_jsonl", lambda *a: None)
     monkeypatch.setattr(E, "print_summary", lambda *a: None)
-    E.main(["--agent", "baseline", "--world", str(path), "--episodes", "1"])
+    E.main(["--policy", "baseline", "--world", str(path), "--episodes", "1"])
     assert seen["world"] is not None and seen["world"].products["insulin"].stockout_penalty == 1

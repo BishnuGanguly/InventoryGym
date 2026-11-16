@@ -4,7 +4,7 @@ The `inventorygym` command: one entry point for the things people do with this p
     inventorygym serve                      start the server and the dashboard
     inventorygym worlds                     list the built-in inventories and their tasks
     inventorygym check my_shop.yaml         check a world file and say what is in it
-    inventorygym eval --agent baseline ...  score an agent (same options as eval.py)
+    inventorygym eval --policy baseline ...  score a policy (same options as eval.py)
     inventorygym teacher --seeds 0:300 ...  write teacher examples for the warm start
 
 Run `inventorygym <command> --help` for a command's options.
@@ -91,7 +91,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("file", help="path of a world file (.yaml or .json), or a built-in name")
     check.set_defaults(run=cmd_check)
 
-    commands.add_parser("eval", help="score an agent (same options as eval.py)", add_help=False)
+    commands.add_parser("eval", help="score a policy (same options as eval.py)", add_help=False)
     commands.add_parser("teacher", help="write teacher examples for the warm start", add_help=False)
     return parser
 
