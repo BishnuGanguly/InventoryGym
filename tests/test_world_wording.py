@@ -13,7 +13,7 @@ import inference
 from agents import LLMAgent, InsightsLLMAgent
 from models import InventoryState, InventoryAction
 from server.inventory_environment import InventoryEnvironment
-from tasks import PHARMA_WORLD, TASK_REGISTRY, get_task_config
+from tasks import PHARMA_WORLD, FIXED_TASKS, get_task_config
 from world import WorldError, build_episode, load_world
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,7 +50,7 @@ def two_pool_grocery():
 # ---------------------------------------------------------------------------
 
 def test_only_the_built_in_pharma_world_keeps_the_original_wording():
-    for task in TASK_REGISTRY:
+    for task in FIXED_TASKS:
         config = build_episode(PHARMA_WORLD, task, 3)
         assert config.context is None and config.insights_wording is None
     copied = build_episode(pharma_copy(), "flu_season", 3)
@@ -125,7 +125,7 @@ def test_cold_chain_causes_fall_back_to_the_general_ones_when_empty():
 def test_a_worlds_own_wording_draws_the_same_random_numbers():
     # A copy of pharma with the same words: the same days and, for delays (shared templates), the same text.
     copy_world = pharma_copy()
-    for task in TASK_REGISTRY:
+    for task in FIXED_TASKS:
         for seed in range(6):
             original = get_task_config(task, seed, insights=True).insights
             copied = get_task_config(task, seed, insights=True, world=copy_world).insights

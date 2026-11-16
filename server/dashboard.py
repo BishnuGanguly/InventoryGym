@@ -323,11 +323,10 @@ class EpisodeTrace:
     references: Dict[str, List[float]] = field(default_factory=dict)
 
 
-def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, insights: bool = False,
-                scenario: str = "fixed") -> Iterator[EpisodeTrace]:
+def run_episode(task_name: str, seed: int, agent: Any, world: Optional[World] = None, insights: bool = False) -> Iterator[EpisodeTrace]:
     """Play one episode, yielding the (same, growing) trace after reset and after every day."""
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task_name, seed=seed, insights=insights, scenario=scenario, world=world)
+    obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
     if hasattr(agent, "start_episode"):
         agent.start_episode(env)
     trace = EpisodeTrace(task_name=task_name, seed=seed, config=env._episode_config, state=obs, insights_on=bool(insights))
@@ -403,19 +402,18 @@ def running_score(rewards: Sequence[float]) -> List[float]:
     return out
 
 
-def play_score_curve(agent: Any, task_name: str, seed: int, world: Optional[World], insights: int,
-                     scenario: str) -> List[float]:
+def play_score_curve(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> List[float]:
     """A rule agent's score so far, day by day, on one episode."""
     final = None
-    for final in run_episode(task_name, seed, agent, world=world, insights=insights, scenario=scenario):
+    for final in run_episode(task_name, seed, agent, world=world, insights=insights):
         pass
     return running_score([r["reward"] for r in final.rows])
 
 
-def reference_curves(task_name: str, seed: int, world: Optional[World], insights: int, scenario: str) -> Dict[str, List[float]]:
+def reference_curves(task_name: str, seed: int, world: Optional[World], insights: bool) -> Dict[str, List[float]]:
     """The baseline's and the oracle's score so far on this episode, to judge an agent against."""
-    return {"Baseline": play_score_curve(BaselineAgent(), task_name, seed, world, insights, scenario),
-            "Oracle": play_score_curve(OracleAgent(), task_name, seed, world, insights, scenario)}
+    return {"Baseline": play_score_curve(BaselineAgent(), task_name, seed, world, insights),
+            "Oracle": play_score_curve(OracleAgent(), task_name, seed, world, insights)}
 
 
 def gap_closed(score: float, baseline: float, oracle: float) -> Optional[float]:
@@ -836,10 +834,10 @@ def _mean_ci(values: Sequence[float]) -> Tuple[float, float]:
     return mean, ci
 
 
-def final_score(agent: Any, task_name: str, seed: int, world: Optional[World], insights: int, scenario: str) -> Tuple[float, int]:
+def final_score(agent: Any, task_name: str, seed: int, world: Optional[World], insights: bool) -> Tuple[float, int]:
     """(final score, failed model calls) of one episode. An LLM run that stops early scores its unplayed days as 0."""
     trace = None
-    for trace in run_episode(task_name, seed, agent, world=world, insights=insights, scenario=scenario):
+    for trace in run_episode(task_name, seed, agent, world=world, insights=insights):
         pass
     return average_step_reward(trace.state, trace.config.no_of_days), trace.llm_errors
 
@@ -1164,7 +1162,6 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                 yield message("⚠️ Pick a task of this inventory first.")
                 return
             insights = bool(insights_choice)
-            scenario = "fixed"
             seed_int = int(seed_value) if seed_value is not None else 42
             key = ""
             if agent_choice in LLM_AGENTS:
@@ -1175,8 +1172,8 @@ def build_dashboard(web_manager=None, action_fields=None, metadata=None, is_chat
                     return
             try:
                 runner = make_agent(agent_choice, (model_name or "").strip() or inference.MODEL_NAME, key)
-                references = reference_curves(task_name, seed_int, world, insights, scenario)
-                frames = run_episode(task_name, seed_int, runner, world=world, insights=insights, scenario=scenario)
+                references = reference_curves(task_name, seed_int, world, insights)
+                frames = run_episode(task_name, seed_int, runner, world=world, insights=insights)
                 sku_id = None
                 for trace in frames:
                     trace.references = references

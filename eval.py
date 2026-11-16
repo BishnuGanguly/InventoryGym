@@ -95,19 +95,17 @@ def run_episode(
     save_steps: bool = False,
     on_day: Optional[Callable[[int, str], None]] = None,
     insights: bool = False,
-    scenario: str = "fixed",
     world: Optional[World] = None,
 ) -> Dict[str, Any]:
     """
     Play one full episode and return a JSON-serialisable record of it.
     `on_day(day, reply)`, if given, is called after every simulated day (e.g. to show progress).
-    `insights` announces the disruptions ahead of time (see insights.py); `scenario` is
-    "fixed" (the original tasks) or "random" (disrupted SKUs and days drawn per seed).
+    `insights` announces the disruptions ahead of time (see insights.py).
     `world` is the world the task belongs to (default the built-in pharma world).
     """
     agent = make_agent(agent_name, llm)
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task_name, seed=seed, insights=insights, scenario=scenario, world=world)
+    obs = env.reset(task_name=task_name, seed=seed, insights=insights, world=world)
     agent.start_episode(env)
 
     history: List[Tuple[int, str, str]] = []
@@ -161,7 +159,6 @@ def run_episode(
         "seed": seed,
         "split": split,
         "insights": insights,
-        "scenario": scenario,
         **({"world": world.name} if world is not None else {}),
         "score": round(compute_final_score(obs, env._episode_config), 6),
         "avg_fill": round(fill_total / days, 6) if days else 0.0,
@@ -190,14 +187,13 @@ def evaluate(
     llm: Optional[Dict[str, str]] = None,
     save_steps: bool = False,
     insights: bool = False,
-    scenario: str = "fixed",
     world: Optional[World] = None,
 ) -> List[Dict[str, Any]]:
     """Run `episodes` seeds (the first N of the split) on each task (of `world`, default pharma)."""
     seeds = list(SEED_SPLITS[split][:episodes])
     jobs = [
         dict(agent_name=agent_name, task_name=t, seed=s, split=split, llm=llm, save_steps=save_steps, insights=insights,
-             scenario=scenario, world=world)
+             world=world)
         for t in task_names for s in seeds
     ]
     if workers <= 1:
@@ -315,9 +311,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--save-steps", action="store_true", help="also store every day's reply and reward")
     parser.add_argument("--insights", action="store_true",
                         help="give the agent insights: each disruption is announced 5 to 10 days ahead")
-    parser.add_argument("--random-scenarios", action="store_true",
-                        help="draw each episode's disrupted SKUs and days from its seed, with 14 days of "
-                             "storage, instead of the fixed tasks")
     parser.add_argument("--out", type=Path, help="output .jsonl path")
     parser.add_argument("--model", default=inference.MODEL_NAME, help="llm: model name")
     parser.add_argument("--base-url", default=inference.API_BASE_URL, help="llm: OpenAI-compatible endpoint")
@@ -346,8 +339,6 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         parser.error(str(exc))
     # Compared by content, not name: an edited copy of pharma.yaml is a world of its own.
     builtin_default = world == load_world(DEFAULT_WORLD)
-    if args.random_scenarios and not builtin_default:
-        parser.error(f"--random-scenarios is only available for the built-in {DEFAULT_WORLD} world for now")
     task_names = world.task_names if args.tasks == "all" else [t.strip() for t in args.tasks.split(",")]
     unknown = [t for t in task_names if t not in world.tasks]
     if unknown:
@@ -361,15 +352,13 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                "timeout": args.timeout, "action": args.action}
     workers = args.workers or (1 if llm else min(os.cpu_count() or 1, 8))
 
-    scenario = "random" if args.random_scenarios else "fixed"
     records = evaluate(args.agent, task_names, args.split, args.episodes, workers, llm, args.save_steps, args.insights,
-                       scenario, None if builtin_default else world)
+                       None if builtin_default else world)
     name = args.agent if not llm else args.agent + "_" + re.sub(r"[^A-Za-z0-9.]+", "-", args.model)
     if not builtin_default:
         name = re.sub(r"[^A-Za-z0-9.]+", "-", world.name) + "_" + name
     insights = "_insights" if args.insights else ""
-    rs = "_rs" if args.random_scenarios else ""
-    out = args.out or ROOT / "results" / f"{name}{insights}{rs}_{args.split}_{args.episodes}.jsonl"
+    out = args.out or ROOT / "results" / f"{name}{insights}_{args.split}_{args.episodes}.jsonl"
     write_jsonl(out, records)
     print_summary(records)
     print(f"\n{len(records)} episodes written to {out}")

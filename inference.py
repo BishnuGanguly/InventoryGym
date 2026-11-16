@@ -3,7 +3,7 @@ inference.py
 ============
 Baseline inference script for the Pharma Inventory Management Environment.
 
-Runs every task in tasks.TASK_REGISTRY (supply_chain_broken, flu_season,
+Runs every task in tasks.FIXED_TASKS (supply_chain_broken, flu_season,
 epidemic_two_wave) in sequence. Each task is a separate 60-day episode.
 
 Environment variables
@@ -51,7 +51,7 @@ from openai import OpenAI
 
 from client import InventoryEnvClient
 from models import EpisodeConfig, InventoryState, InventoryAction
-from tasks import TASK_REGISTRY, compute_final_score
+from tasks import FIXED_TASKS, compute_final_score, get_task_config
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -926,7 +926,7 @@ async def main() -> None:
     """
     Entry point.
 
-    Runs every task in TASK_REGISTRY in sequence:
+    Runs every task in FIXED_TASKS in sequence:
         supply_chain_broken
         flu_season
         epidemic_two_wave
@@ -937,9 +937,9 @@ async def main() -> None:
     """
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-    for task_name, task_fn in TASK_REGISTRY.items():
+    for task_name in FIXED_TASKS:
         try:
-            episode_config = task_fn(TASK_SEED)
+            episode_config = get_task_config(task_name, TASK_SEED)
             await run_episode(
                 client=client,
                 task_name=task_name,

@@ -79,7 +79,6 @@ class InventoryEnvironment(Environment):
         episode_config: Optional[Union[EpisodeConfig, Dict[str, Any]]] = None,
         task_name: Optional[str] = None,
         insights: bool = False,
-        scenario: str = "fixed",
         world: Optional[Union[World, Dict[str, Any], str]] = None,
         **kwargs: Any,
     ) -> InventoryState:
@@ -89,8 +88,7 @@ class InventoryEnvironment(Environment):
         The episode is chosen, in order of precedence, from:
           - episode_config: an EpisodeConfig or its dict form (as sent over HTTP/WS)
           - task_name:      a task of `world`, built with `seed`, `insights` (True:
-                            disruptions are announced a few days ahead; see insights.py) and
-                            `scenario` ("fixed" tasks or "random" SKUs and days)
+                            disruptions are announced a few days ahead; see insights.py)
           - world alone:    the world's first task, built the same way
           - the built-in default config
 
@@ -110,7 +108,7 @@ class InventoryEnvironment(Environment):
             world_obj = load_world(world, allow_files=False) if world is not None else None
             if task_name is None:
                 task_name = world_obj.task_names[0]
-            self._episode_config = get_task_config(task_name, seed, insights=insights, scenario=scenario, world=world_obj)
+            self._episode_config = get_task_config(task_name, seed, insights=insights, world=world_obj)
         else:
             self._episode_config = self._default_episode_config()
         self._draw_world_noise()

@@ -11,20 +11,20 @@ import eval as E
 import inference
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS
+from tasks import SURPRISE_TASKS, TEST_SEEDS
 from training import episodes as EP
 from training import grpo_reward as G
 from training import probe as P
 from training import teacher as T
 
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(SURPRISE_TASKS)
 LOW, HIGH = inference.ADJUST_DAYS_RANGE
 
 
 def days_of(task="supply_chain_broken", seed=4):
     """(env, obs) on every day of an episode the teacher plays."""
     env = InventoryEnvironment()
-    obs = env.reset(task_name=task, seed=seed, insights=True, scenario="random")
+    obs = env.reset(task_name=task, seed=seed, insights=True)
     agent = T.TeacherAgent()
     agent.start_episode(env)
     while not obs.done:
@@ -52,7 +52,7 @@ def test_answers_are_whole_days_in_range_for_every_sku_and_zero_without_visible_
 
 def test_normal_lead_times_are_the_first_reports():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=1, insights=True, scenario="random")
+    obs = env.reset(task_name="surprise_outbreak", seed=1, insights=True)
     assert T.normal_lead_times(env) == {k: s.avg_lead_time for k, s in obs.skus.items()}
 
 
@@ -68,8 +68,8 @@ def test_teacher_agent_sends_what_a_model_giving_its_answer_would_send():
 def test_teacher_beats_the_baseline_and_the_extra_days_rule():
     seeds = list(TEST_SEEDS[:6])
     teacher = st.fmean(r["score"] for r in EP.run_rule_episodes(T.TeacherAgent(), "teacher", TASKS, seeds))
-    rule = st.fmean(E.run_episode("baseline_insights", t, s, insights=True, scenario="random")["score"] for t in TASKS for s in seeds)
-    baseline = st.fmean(E.run_episode("baseline", t, s, insights=True, scenario="random")["score"] for t in TASKS for s in seeds)
+    rule = st.fmean(E.run_episode("baseline_insights", t, s, insights=True)["score"] for t in TASKS for s in seeds)
+    baseline = st.fmean(E.run_episode("baseline", t, s, insights=True)["score"] for t in TASKS for s in seeds)
     assert teacher > rule > baseline
 
 
@@ -117,7 +117,7 @@ def test_states_option_and_label_stats(rows):
 
 
 def test_examples_only_come_from_train_seeds_outside_the_probe():
-    assert T.PROBE_SEEDS == P.PROBE_SEEDS and (T.SCENARIO, T.INSIGHTS) == (G.SCENARIO, G.INSIGHTS)
+    assert T.PROBE_SEEDS == P.PROBE_SEEDS and T.INSIGHTS == G.INSIGHTS
     for bad in ([TEST_SEEDS[0]], [P.PROBE_SEEDS[0]], [-1]):
         with pytest.raises(ValueError, match="train seeds outside the probe seeds"):
             T.sft_examples(["flu_season"], bad)

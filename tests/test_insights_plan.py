@@ -11,9 +11,9 @@ import eval as E
 from agents import InsightsPlanAgent, baseline_policy, insights_plan_orders
 from models import InventoryState, InsightEvent, InventoryAction, SKUState, StoragePoolState
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS
+from tasks import FIXED_TASKS, SURPRISE_TASKS, TEST_SEEDS
 
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(FIXED_TASKS)
 
 
 def state(day=10, demand=10.0, stock=0.0, pool_capacity=100_000.0, history=None):
@@ -131,11 +131,11 @@ def test_agent_keeps_the_first_reported_lead_time_as_normal():
     assert agent._normal_lead_time == {}
 
 
-@pytest.mark.parametrize("scenario", ["fixed", "random"])
-def test_plan_beats_the_baseline_and_the_extra_days_rule(scenario):
+@pytest.mark.parametrize("tasks", [FIXED_TASKS, SURPRISE_TASKS], ids=["fixed", "surprise"])
+def test_plan_beats_the_baseline_and_the_extra_days_rule(tasks):
     def mean(agent):
-        return statistics.fmean(E.run_episode(agent, t, s, insights=True, scenario=scenario)["score"]
-                                for t in TASKS for s in TEST_SEEDS[:6])
+        return statistics.fmean(E.run_episode(agent, t, s, insights=True)["score"]
+                                for t in tasks for s in TEST_SEEDS[:6])
     plan, rule, baseline = mean("insights_plan"), mean("baseline_insights"), mean("baseline")
     assert plan > rule > baseline
     assert plan - baseline > 0.02
@@ -143,14 +143,14 @@ def test_plan_beats_the_baseline_and_the_extra_days_rule(scenario):
 
 def test_plan_wastes_less_than_the_extra_days_rule():
     def wasted(agent):
-        return sum(E.run_episode(agent, t, s, insights=True, scenario="random")["units_wasted"]
-                   for t in TASKS for s in TEST_SEEDS[:6])
+        return sum(E.run_episode(agent, t, s, insights=True)["units_wasted"]
+                   for t in SURPRISE_TASKS for s in TEST_SEEDS[:6])
     assert wasted("insights_plan") < wasted("baseline_insights")
 
 
 def test_orders_are_valid_json_for_the_environment():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="epidemic_two_wave", seed=TEST_SEEDS[1], insights=True, scenario="random")
+    obs = env.reset(task_name="surprise_epidemic", seed=TEST_SEEDS[1], insights=True)
     agent = E.make_agent("insights_plan")
     agent.start_episode(env)
     for _ in range(25):

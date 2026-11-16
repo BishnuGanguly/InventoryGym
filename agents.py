@@ -90,7 +90,7 @@ def baseline_policy(
         extra = min(max(float(extra_days.get(sku_id, 0.0)), min_extra, -safety_days), MAX_EXTRA_DAYS,
                     max(MAX_COVER_DAYS - lead_time - safety_days, 0.0))
         shortfall = demand * (lead_time + safety_days + extra) - sku.inventory_on_hand - inbound.get(sku_id, 0.0)
-        if shortfall > 0:
+        if round(shortfall) >= 1:          # less than half a unit short is not an order
             orders[sku_id] = round(shortfall)
     return orders
 

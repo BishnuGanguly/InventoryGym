@@ -60,7 +60,7 @@ def test_the_manifest_has_what_openenv_reads():
     assert manifest["spec_version"] == 1 and manifest["name"] == "inventorygym"
     assert manifest["app"] == "server.app:app" and manifest["port"] == 8000
     from world import default_world
-    assert [t["id"] for t in manifest["tasks"]] == default_world().task_names
+    assert [t["id"] for t in manifest["tasks"]] == default_world().task_names       # all six, in the file's order
 
 
 def test_nothing_of_the_template_is_left():

@@ -9,7 +9,7 @@ import pytest
 
 import eval as E
 from agents import Agent, LLMAgent
-from tasks import TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS
+from tasks import FIXED_TASKS, TEST_SEEDS, TRAIN_SEEDS
 
 TEST_SEED = TEST_SEEDS[0]
 
@@ -43,7 +43,7 @@ def test_episode_record_is_complete_and_deterministic():
     json.dumps(first)   # serialisable
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_floor_baseline_and_ceiling_are_ordered(task_name):
     nothing = E.run_episode("nothing", task_name, TEST_SEED)["score"]
     baseline = E.run_episode("baseline", task_name, TEST_SEED)["score"]

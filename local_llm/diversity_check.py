@@ -4,7 +4,7 @@ and do those answers get different rewards?
 
 GRPO learns only from differences between the answers to one prompt: if all 8 answers
 are the same, or all score the same, that prompt teaches nothing. This script picks a few
-days where the answer matters (one per task by default, from train seeds, random scenario,
+days where the answer matters (one per task by default, from train seeds, the surprise tasks,
 insights), asks the model 8 times per day at a sampling temperature, scores every
 answer with the GRPO reward (training/grpo_reward.py), and says whether there is enough
 variety to train on.
@@ -33,7 +33,7 @@ sys.path.insert(0, str(ROOT / "local_llm"))
 
 import inference  # noqa: E402
 import run_local_llm as R  # noqa: E402
-from tasks import TASK_REGISTRY, TRAIN_SEEDS  # noqa: E402
+from tasks import SURPRISE_TASKS, TRAIN_SEEDS  # noqa: E402
 from training.grpo_reward import DayPrompt, GRPOReward, build_state, insights_day_prompts, prompt_messages  # noqa: E402
 from training.probe import REFERENCE_DAYS, insights_skus, reference_rewards  # noqa: E402,F401
 
@@ -49,7 +49,7 @@ def pick_prompts(reward: GRPOReward, count: int, seeds: Sequence[int]) -> List[D
     Days where the answer matters (reference answers differ by at least MIN_SPREAD points),
     taking the tasks in turn so the days cover different tasks. Deterministic.
     """
-    tasks = sorted(TASK_REGISTRY)
+    tasks = sorted(SURPRISE_TASKS)
     candidates = {t: insights_day_prompts([t], seeds) for t in tasks}
     picked: List[DayPrompt] = []
     position = {t: 0 for t in tasks}
@@ -158,7 +158,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     client = OpenAI(base_url=args.base_url, api_key="not-needed", timeout=args.timeout, max_retries=1)
     reward = GRPOReward()
-    print("Choosing days where the answer matters (train seeds, random scenario, insights)...", flush=True)
+    print("Choosing days where the answer matters (train seeds, surprise tasks, insights)...", flush=True)
     prompts = pick_prompts(reward, args.prompts, TRAIN_SEEDS[:40])
     calls = len(prompts) * args.samples * len(temperatures)
     print(f"Model {model}: {len(prompts)} days x {args.samples} answers x {len(temperatures)} temperature(s) "

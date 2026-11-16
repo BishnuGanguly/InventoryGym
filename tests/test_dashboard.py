@@ -22,7 +22,7 @@ from server.dashboard import (
     score_so_far,
     unmet_heatmap,
 )
-from tasks import TASK_REGISTRY, compute_final_score
+from tasks import FIXED_TASKS, compute_final_score
 
 
 class StubCompletions:
@@ -51,7 +51,7 @@ def last(frames):
     return trace
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_baseline_plays_full_episode(task_name):
     trace = last(run_episode(task_name, 42, BaselineAgent()))
     assert trace.finished and not trace.stopped_reason
@@ -130,7 +130,7 @@ def test_an_episode_of_another_world_draws_every_chart():
     world = D.parse_world(D.template_text(D.TEMPLATE_GROCERY))
     agent = D.make_agent(D.AGENT_INSIGHTS_PLAN)
     trace = last(run_episode("surprise_disruptions", 10000, agent, world=world, insights=True))
-    trace.references = D.reference_curves("surprise_disruptions", 10000, world, 2, "fixed")
+    trace.references = D.reference_curves("surprise_disruptions", 10000, world, True)
     assert trace.finished and set(trace.rows[0]["storage"]) == {"fridge", "freezer", "shelf"}
     assert any(r["new_insights"] for r in trace.rows)
     for figure in (D.score_figure(trace), D.storage_figure(trace), D.preview_figure(trace.config), unmet_heatmap(trace)):

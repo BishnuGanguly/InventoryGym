@@ -6,7 +6,7 @@ import pytest
 
 from models import EpisodeConfig, InventoryAction, SKUEpisodeConfig
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, compute_final_score, get_task_config
+from tasks import FIXED_TASKS, compute_final_score, get_task_config
 
 
 def _deterministic_config(lead_time: float = 3.0, days: int = 10) -> EpisodeConfig:
@@ -77,7 +77,7 @@ def test_reset_unknown_task_name():
         InventoryEnvironment().reset(task_name="nope")
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_tasks_are_seeded(task_name):
     assert get_task_config(task_name, seed=3) == get_task_config(task_name, seed=3)
     assert get_task_config(task_name, seed=3) != get_task_config(task_name, seed=4)
@@ -214,7 +214,7 @@ def test_cumulative_waste_score_adds_one_minus_fraction():
     assert state.inventory_excess_cumulative == pytest.approx(1.0 + 0.5)
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_tasks_give_every_sku_a_waste_penalty(task_name):
     cfg = get_task_config(task_name, seed=0)
     assert all(sku.waste_penalty > 0 for sku in cfg.skus.values())
@@ -266,7 +266,7 @@ def _perfect_foresight_peak(cfg: EpisodeConfig, sku_ids) -> float:
     return max(held)
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_storage_is_sized_from_demand(task_name):
     cfg = get_task_config(task_name, seed=5)
     cold = [s for s in cfg.skus.values() if s.cold_storage_required]
@@ -276,7 +276,7 @@ def test_storage_is_sized_from_demand(task_name):
     assert cfg.ambient_storage_total_capacity == pytest.approx(AMBIENT_STORAGE_DAYS * sum(s.base_demand for s in ambient))
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_perfect_foresight_plan_fits_in_storage(task_name):
     """Capacity must never make good play impossible."""
     for seed in range(50):
@@ -322,14 +322,14 @@ def _order_up_to(state, cover_days: float = 6.0):
     }
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_final_score_is_mean_step_reward(task_name):
     state, cfg, rewards = _play(task_name, 3, _order_up_to)
     expected = min(1.0, max(0.0, sum(rewards) / cfg.no_of_days))
     assert compute_final_score(state, cfg) == pytest.approx(expected)
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_ordering_nothing_scores_about_zero(task_name):
     """It used to score ~0.40 because waste-free days were credited even with no deliveries."""
     state, cfg, _ = _play(task_name, 0, lambda s: {})
@@ -361,7 +361,7 @@ def test_partial_episode_counts_unplayed_days_as_zero():
 from tasks import DEMAND_NOISE_CV, LEAD_TIME_NOISE_STD  # noqa: E402
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_tasks_switch_noise_on(task_name):
     for sku in get_task_config(task_name, seed=2).skus.values():
         assert sku.demand_std == pytest.approx(DEMAND_NOISE_CV * sku.base_demand)
@@ -377,7 +377,7 @@ def test_demand_is_noisy_around_the_curve():
     assert len(set(round(d, 6) for d in realised)) > 50    # not a constant
 
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_same_seed_same_world_whatever_the_agent_does(task_name):
     """Regression: lead-time noise used to be drawn only for ordered SKUs, which
     shifted every later random number, so ordering insulin changed paracetamol demand."""

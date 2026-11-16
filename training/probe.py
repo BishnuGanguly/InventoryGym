@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from random import Random
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from tasks import TASK_REGISTRY
+from tasks import SURPRISE_TASKS
 from training.teacher import answer_text, normal_lead_times, teacher_answer
 from training.grpo_reward import (PENALTY_NO_JSON, PENALTY_OUT_OF_RANGE, DayPrompt, GRPOReward, build_state,
                                   insights_day_prompts, prompt_messages)
@@ -68,7 +68,7 @@ def build_probe(seeds: Iterable[int] = PROBE_SEEDS, count: int = 100, reward: Op
     answers are scored with `reward`, so pass the reward the model is trained with.
     """
     reward = reward or GRPOReward()
-    tasks = sorted(tasks or TASK_REGISTRY)
+    tasks = sorted(tasks or SURPRISE_TASKS)
     seeds = list(seeds)
     per_task = [insights_day_prompts([t], seeds, states=states) for t in tasks]
     picked: List[DayPrompt] = []

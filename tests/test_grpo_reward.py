@@ -14,9 +14,9 @@ import training.grpo_reward as G
 from agents import LLMAgent
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS
+from tasks import SURPRISE_TASKS, TEST_SEEDS, TRAIN_SEEDS
 
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(SURPRISE_TASKS)
 
 
 @pytest.fixture(scope="module")
@@ -33,7 +33,7 @@ def _insights_skus(prompt):
 
 def test_resample_future_noise_redraws_from_today_on_only():
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=1, scenario="random")
+    obs = env.reset(task_name="surprise_outbreak", seed=1)
     for _ in range(10):
         obs = env.step(InventoryAction(message="{}"))
     before = copy.deepcopy((env._demand_z, env._lead_time_z))
@@ -47,7 +47,7 @@ def test_resample_future_noise_redraws_from_today_on_only():
 # --- prompts --------------------------------------------------------------------
 
 def test_prompts_are_insights_days_of_the_random_scenario(prompts):
-    assert prompts and all(p.scenario == "random" and p.insights is True for p in prompts)
+    assert prompts and all(p.task in SURPRISE_TASKS and p.insights is True for p in prompts)
     for p in prompts[::25]:
         _, obs, _ = G.build_state(p)
         assert obs.current_date == p.day and obs.insights
@@ -71,7 +71,7 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
 
     agent = LLMAgent("stub", "x", "x", client=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
     env = InventoryEnvironment()
-    obs = env.reset(task_name=p.task, seed=p.seed, insights=p.insights, scenario=p.scenario)
+    obs = env.reset(task_name=p.task, seed=p.seed, insights=p.insights)
     history = []
     while obs.current_date <= p.day:
         day = obs.current_date
@@ -84,7 +84,7 @@ def test_prompt_is_what_the_llm_agent_sends(prompts):
 
 def test_dataset_rows_carry_the_columns_the_reward_reads(prompts):
     row = G.dataset_rows(prompts[:1])[0]
-    assert set(row) == {"prompt", "task", "seed", "day", "scenario", "insights", "states"}
+    assert set(row) == {"prompt", "task", "seed", "day", "insights", "states"}
     assert row["states"] == "baseline"
     assert row["prompt"][0]["role"] == "system"
 
@@ -115,7 +115,7 @@ def test_answering_zero_scores_exactly_zero(prompts):
 
 
 def test_reward_is_the_gain_over_answering_zero_per_day_in_points(prompts):
-    p = next(q for q in prompts if q.task == "supply_chain_broken")
+    p = next(q for q in prompts if q.task == "surprise_delays")
     sku = _insights_skus(p)[0]
     env, obs, _ = G.build_state(p)
     expected = (G.score(env, obs, p, {sku: 7.0}) - G.score(env, obs, p, {})) * 100 / G.HORIZON
@@ -172,7 +172,7 @@ def test_trl_style_call_with_chat_completions(prompts):
     p = prompts[0]
     completions = [[{"role": "assistant", "content": "{}"}], [{"role": "assistant", "content": "no idea"}], "{}"]
     out = G.GRPOReward()(completions, task=[p.task] * 3, seed=[p.seed] * 3, day=[p.day] * 3,
-                         scenario=[p.scenario] * 3, insights=[p.insights] * 3, prompts=None)
+                         insights=[p.insights] * 3, prompts=None)
     assert out == [0.0, G.PENALTY_NO_JSON, 0.0]
 
 

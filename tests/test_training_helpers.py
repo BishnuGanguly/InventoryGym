@@ -12,13 +12,13 @@ import inference
 from agents import LLMAgent
 from models import InventoryAction
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS
+from tasks import SURPRISE_TASKS, TEST_SEEDS, TRAIN_SEEDS
 from training import episodes as EP
 from training import probe as P
 from training.grpo_reward import GRPOReward, PENALTY_NO_JSON
 from training.monitor import MonitoredReward
 
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(SURPRISE_TASKS)
 
 
 @pytest.fixture(scope="module")
@@ -81,8 +81,8 @@ def test_empty_answers_play_like_the_baseline():
         return ["{}"] * len(batch)
 
     seeds = TEST_SEEDS[:2]
-    records = EP.run_llm_episodes(TASKS, seeds, generate, insights=True, scenario="random")
-    baseline = [E.run_episode("baseline", t, s, insights=True, scenario="random") for t in TASKS for s in seeds]
+    records = EP.run_llm_episodes(TASKS, seeds, generate, insights=True)
+    baseline = [E.run_episode("baseline", t, s, insights=True) for t in TASKS for s in seeds]
     assert [r["score"] for r in records] == [b["score"] for b in baseline]
     assert calls[0] == len(TASKS) * len(seeds) and len(calls) == 60    # one batched call per day
     assert E.paired_comparison(records, baseline)["ALL"]["mean"] == 0
@@ -95,7 +95,7 @@ def test_batched_episodes_match_the_llm_agent():
         create=lambda **_: SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=answer))]))))
     agent = LLMAgent("stub", "x", "x", client=stub)
     env = InventoryEnvironment()
-    obs = env.reset(task_name="flu_season", seed=TEST_SEEDS[0], insights=True, scenario="random")
+    obs = env.reset(task_name="surprise_outbreak", seed=TEST_SEEDS[0], insights=True)
     history = []
     while not obs.done:
         day = obs.current_date
@@ -103,7 +103,7 @@ def test_batched_episodes_match_the_llm_agent():
         obs = env.step(InventoryAction(message=reply))
         history.append((day, reply, inference.build_feedback(obs)))
     expected = E.compute_final_score(obs, env._episode_config)
-    got = EP.run_llm_episodes(["flu_season"], TEST_SEEDS[:1], lambda b: [answer] * len(b), save_replies=True)[0]
+    got = EP.run_llm_episodes(["surprise_outbreak"], TEST_SEEDS[:1], lambda b: [answer] * len(b), save_replies=True)[0]
     assert got["score"] == round(expected, 6) and got["parse_failures"] == 0 and len(got["replies"]) == 60
 
 
@@ -114,7 +114,7 @@ def test_parse_failures_are_counted():
 
 def test_flat_extra_agent_and_rule_runner():
     plus0 = EP.run_rule_episodes(EP.FlatExtraAgent(0), "plus0", TASKS[:1], TEST_SEEDS[:2])
-    baseline = [E.run_episode("baseline", TASKS[0], s, insights=True, scenario="random") for s in TEST_SEEDS[:2]]
+    baseline = [E.run_episode("baseline", TASKS[0], s, insights=True) for s in TEST_SEEDS[:2]]
     assert [r["score"] for r in plus0] == [b["score"] for b in baseline]
     plus3 = EP.run_rule_episodes(EP.FlatExtraAgent(3), "plus3", TASKS[:1], TEST_SEEDS[:2])
     assert [r["score"] for r in plus3] != [r["score"] for r in plus0]
@@ -126,7 +126,7 @@ def test_monitored_reward_returns_the_same_rewards_and_health_numbers(items):
     item = items[0]
     p = item.prompt
     texts = ["{}", "rambling", _insights_answer(item, 7), '{"vitamins": 30}'] * 2
-    cols = dict(task=[p.task] * 8, seed=[p.seed] * 8, day=[p.day] * 8, scenario=[p.scenario] * 8, insights=[p.insights] * 8)
+    cols = dict(task=[p.task] * 8, seed=[p.seed] * 8, day=[p.day] * 8, insights=[p.insights] * 8)
     m = MonitoredReward()
     assert m(texts, **cols) == GRPOReward()(texts, **cols)
     stats = m.pop_stats()

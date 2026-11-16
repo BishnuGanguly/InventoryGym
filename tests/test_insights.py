@@ -13,10 +13,10 @@ from agents import MAX_COVER_DAYS, InsightsLLMAgent, InsightsRuleAgent, baseline
 from models import InventoryAction
 from insights import ANNOUNCE_DAYS_AHEAD, add_insights, find_events, visible_insights
 from server.inventory_environment import InventoryEnvironment
-from tasks import TASK_REGISTRY, TEST_SEEDS, get_task_config
+from tasks import FIXED_TASKS, PHARMA_TASKS, TEST_SEEDS, get_task_config
 
 SEED = TEST_SEEDS[0]
-TASKS = sorted(TASK_REGISTRY)
+TASKS = sorted(FIXED_TASKS)
 
 
 def fake_client(text="{}", fail=False):
@@ -200,16 +200,16 @@ def test_insights_prompt_has_no_example_answer():
     assert not SKU_WITH_NUMBER.search(prompt[prompt.index("Extra days"):])
 
 
-def test_level2_insights_uses_generic_product_names():
+def test_insights_use_generic_product_names():
     """No drug or brand names: 'amlodipine' for bp_medication made models react to the wrong product."""
     from insights import PRODUCT_NAMES
 
     assert PRODUCT_NAMES["bp_medication"] == "blood-pressure medication"
     assert all("(" not in name for name in PRODUCT_NAMES.values())
-    messages = [e.message.lower() for t in TASKS for s in TEST_SEEDS[:20] for scenario in ("fixed", "random")
-                for e in get_task_config(t, s, insights=True, scenario=scenario).insights]
+    messages = [e.message.lower() for t in PHARMA_TASKS for s in TEST_SEEDS[:20]
+                for e in get_task_config(t, s, insights=True).insights]
     assert messages and not any(w in m for m in messages for w in ("amlodipine", "hcq", "supplements"))
-    # Every product a level-2 item mentions is named exactly as in PRODUCT_NAMES.
-    for t in TASKS:
-        for e in get_task_config(t, TEST_SEEDS[0], insights=True, scenario="random").insights:
+    # Every product an insight mentions is named exactly as in PRODUCT_NAMES.
+    for t in PHARMA_TASKS:
+        for e in get_task_config(t, TEST_SEEDS[0], insights=True).insights:
             assert PRODUCT_NAMES[e.sku_id] in e.message.lower()

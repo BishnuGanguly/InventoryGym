@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
+import math
 from pathlib import Path
 
 import pytest
@@ -10,8 +13,7 @@ import yaml
 
 import eval as E
 from server.inventory_environment import InventoryEnvironment
-from tasks import (PHARMA_WORLD, SKU_CATALOGUE, TASK_REGISTRY, TEST_SEEDS, TRAIN_SEEDS, flat_curve,
-                   gaussian_curve, get_task_config)
+from tasks import FIXED_TASKS, PHARMA_TASKS, PHARMA_WORLD, SKU_CATALOGUE, TEST_SEEDS, TRAIN_SEEDS, get_task_config
 from world import (DemandWave, SupplierDelay, WorldError, build_episode, builtin_worlds, load_world)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,17 +38,26 @@ def with_change(data, path, value):
 # The pharma world is the original environment
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("task_name", sorted(TASK_REGISTRY))
+# A fingerprint of each fixed task's episodes (40 train and 40 test seeds), taken when the
+# tasks were still written in Python. Published results rest on these episodes: a change
+# here means every reported pharma score has to be measured again.
+ORIGINAL_TASKS = {"supply_chain_broken": "8dcda35b8bc2b1d7", "flu_season": "64cd5d0213b148ab",
+                  "epidemic_two_wave": "f8abd3f19502ea9e"}
+
+
+@pytest.mark.parametrize("task_name", sorted(FIXED_TASKS))
 def test_pharma_world_builds_exactly_the_original_tasks(task_name):
-    task_fn = TASK_REGISTRY[task_name]
-    for seed in list(TRAIN_SEEDS[:200]) + list(TEST_SEEDS[:200]):
-        assert build_episode(PHARMA_WORLD, task_name, seed) == task_fn(seed)
+    episodes = [build_episode(PHARMA_WORLD, task_name, seed).model_dump(
+                    mode="json", exclude={"insights", "context", "insights_wording"})
+                for seed in list(TRAIN_SEEDS[:40]) + list(TEST_SEEDS[:40])]
+    blob = json.dumps(episodes, sort_keys=True)
+    assert hashlib.sha256(blob.encode()).hexdigest()[:16] == ORIGINAL_TASKS[task_name]
 
 
 def test_pharma_is_built_in_and_is_the_default():
     assert "pharma" in builtin_worlds()
     assert load_world() == load_world("pharma") == PHARMA_WORLD
-    assert PHARMA_WORLD.task_names == list(TASK_REGISTRY)
+    assert PHARMA_WORLD.task_names == list(PHARMA_TASKS)
     assert get_task_config("flu_season", 3) == get_task_config("flu_season", 3, world="pharma")
 
 
@@ -108,7 +119,7 @@ def test_events_shape_the_curves():
     strike = build_episode(world, "delivery_strike", 3)
     rice = strike.skus["rice"].lead_time_curve
     assert rice[14] == rice[25] == 1.0 and len(set(rice[15:25])) == 1 and 2 <= rice[15] <= 4
-    assert strike.skus["yogurt"].lead_time_curve == flat_curve(45)
+    assert strike.skus["yogurt"].lead_time_curve == [1.0] * 45
 
 
 def test_demand_events_multiply_and_delays_overwrite():
@@ -120,7 +131,9 @@ def test_demand_events_multiply_and_delays_overwrite():
         {"type": "supplier_delay", "product": "rice", "start_day": 10, "end_day": 20, "multiplier": 3},
     ]}})
     config = build_episode(load_world(data), "t", 0)
-    waves = [a * b for a, b in zip(gaussian_curve(10, 1.0, 3, 45), gaussian_curve(30, 2.0, 3, 45))]
+    def bell(peak, amplitude, width):
+        return [1.0 + amplitude * math.exp(-0.5 * ((day - peak) / width) ** 2) for day in range(45)]
+    waves = [a * b for a, b in zip(bell(10, 1.0, 3), bell(30, 2.0, 3))]
     assert config.skus["milk"].demand_curve == pytest.approx([0.5 * w for w in waves])
     assert config.skus["rice"].lead_time_curve == [1.0] * 5 + [2.0] * 5 + [3.0] * 11 + [1.0] * 24
 
@@ -205,15 +218,12 @@ def test_json_world_files_load(tmp_path):
     assert load_world(path) == load_world(GROCERY)
 
 
-def test_unknown_task_and_random_scenario_are_refused():
+def test_an_unknown_task_is_refused():
     world = load_world(GROCERY)
     with pytest.raises(WorldError, match="has no task 'flu_season'"):
         build_episode(world, "flu_season", 0)
     with pytest.raises(ValueError, match="Unknown task 'flu_season' in world 'grocery'"):
         get_task_config("flu_season", 0, world=world)
-    with pytest.raises(WorldError, match="only available for the built-in pharma world") as info:
-        get_task_config("holiday_rush", 0, scenario="random", world=world)
-    assert "day ranges" in str(info.value)                     # says what to do instead
 
 
 def test_event_types_are_exported():
@@ -242,7 +252,6 @@ def test_command_line_rejects_bad_worlds_and_tasks(capsys):
     for argv, message in [
         (["--world", "nope"], "no built-in world named 'nope'"),
         (["--world", str(GROCERY), "--tasks", "flu_season"], "unknown task(s) ['flu_season'] in world 'grocery'"),
-        (["--world", str(GROCERY), "--random-scenarios"], "only available for the built-in pharma world"),
     ]:
         with pytest.raises(SystemExit):
             E.main(["--agent", "baseline", *argv])
@@ -255,10 +264,8 @@ def test_an_edited_copy_of_pharma_is_its_own_world(tmp_path, monkeypatch):
     path = tmp_path / "pharma.yaml"
     path.write_text(yaml.safe_dump(data))
     seen = {}
-    monkeypatch.setattr(E, "evaluate", lambda *args: seen.setdefault("world", args[9]) and [])
+    monkeypatch.setattr(E, "evaluate", lambda *args: seen.setdefault("world", args[8]) and [])
     monkeypatch.setattr(E, "write_jsonl", lambda *a: None)
     monkeypatch.setattr(E, "print_summary", lambda *a: None)
     E.main(["--agent", "baseline", "--world", str(path), "--episodes", "1"])
     assert seen["world"] is not None and seen["world"].products["insulin"].stockout_penalty == 1
-    with pytest.raises(SystemExit):
-        E.main(["--agent", "baseline", "--world", str(path), "--random-scenarios"])

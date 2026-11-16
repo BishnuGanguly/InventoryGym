@@ -31,11 +31,11 @@ class MonitoredReward(GRPOReward):
         return {e.sku_id for e in env._episode_config.insights if e.announce_day <= prompt.day <= e.end_day}
 
     def __call__(self, completions: Sequence[Any], task: Sequence[str], seed: Sequence[int],
-                 day: Sequence[int], scenario: Optional[Sequence[str]] = None,
+                 day: Sequence[int],
                  insights: Optional[Sequence[int]] = None, states: Optional[Sequence[str]] = None,
                  **_: Any) -> List[float]:
         rewards = []
-        for prompt, completion in zip(self.prompts_of(task, seed, day, scenario, insights, states), completions):
+        for prompt, completion in zip(self.prompts_of(task, seed, day, insights, states), completions):
             s = self.score_answer(prompt, completion_text(completion))
             extra = {k: v for k, v in s["extra_days"].items() if v > 0}
             top = max(extra, key=extra.get) if extra else None

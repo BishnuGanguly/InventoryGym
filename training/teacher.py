@@ -16,7 +16,7 @@ pairs first gives GRPO a model that already answers sensibly.
     python -m training.teacher --seeds 0:300 --out data/teacher_adjust.jsonl   # the same, as a file
 
 How good the teacher is, in the model's own answer format (50 test seeds per task,
-insights): 0.887 in the random scenario (baseline 0.859, "+3 days on every SKU"
+insights): 0.887 on the surprise tasks (baseline 0.859, "+3 days on every SKU"
 0.869, baseline_insights 0.877, the plan with exact orders 0.892, oracle 0.925) and 0.909
 on the fixed tasks. No model is needed here: everything is the simulator.
 """
@@ -38,12 +38,11 @@ import inference  # noqa: E402
 from agents import Agent, BaselineAgent, insights_plan_adjust_days  # noqa: E402
 from models import InventoryState, InventoryAction  # noqa: E402
 from server.inventory_environment import InventoryEnvironment  # noqa: E402
-from tasks import TASK_REGISTRY, TRAIN_SEEDS  # noqa: E402
+from tasks import PHARMA_TASKS, SURPRISE_TASKS, TRAIN_SEEDS  # noqa: E402
 from training.episodes import adjust_messages, answer_to_order  # noqa: E402
 
 # The setting the model trains in (the same as training/grpo_reward.py, which imports
-# this module): random scenarios with insights.
-SCENARIO = "random"
+# this module): the surprise tasks (tasks.SURPRISE_TASKS), with insights.
 INSIGHTS = True
 # Train seeds the probe exam is drawn from (training/probe.py PROBE_SEEDS): never train on them.
 PROBE_SEEDS = range(9000, 9100)
@@ -125,7 +124,6 @@ def check_train_seeds(seeds: Iterable[int]) -> List[int]:
 def sft_examples(
     tasks: Iterable[str],
     seeds: Iterable[int],
-    scenario: str = SCENARIO,
     insights: bool = INSIGHTS,
     states: str = "mixed",
     quiet_share: float = QUIET_SHARE,
@@ -140,7 +138,7 @@ def sft_examples(
     quiet_share: the share of days without visible insights that is kept (their answer is
         all zeros); every day with insights are kept. The choice is fixed per day.
 
-    Each row also has task, seed, day, scenario, insights, has_insights and states (who played).
+    Each row also has task, seed, day, insights, has_insights and states (who played).
     Deterministic: the same arguments give the same rows.
     """
     if states not in STATES:
@@ -153,7 +151,7 @@ def sft_examples(
         for seed in seeds:
             played_by = states if states != "mixed" else ("teacher" if seed % 2 == 0 else "baseline")
             env = InventoryEnvironment()
-            obs = env.reset(task_name=task, seed=seed, insights=insights, scenario=scenario)
+            obs = env.reset(task_name=task, seed=seed, insights=insights)
             events = list(env._episode_config.insights)
             normal = normal_lead_times(env)
             baseline, history = BaselineAgent(), []
@@ -164,7 +162,7 @@ def sft_examples(
                 if has_insights or Random(f"quiet|{task}|{seed}|{day}").random() < quiet_share:
                     rows.append({
                         "messages": adjust_messages(obs, history) + [{"role": "assistant", "content": answer}],
-                        "task": task, "seed": seed, "day": day, "scenario": scenario, "insights": insights,
+                        "task": task, "seed": seed, "day": day, "insights": insights,
                         "has_insights": has_insights, "states": played_by,
                     })
                 reply = answer_to_order(obs, answer) if played_by == "teacher" else baseline.act(obs, history)[0]
@@ -230,23 +228,24 @@ def write_jsonl(path: Path, rows: Sequence[Dict[str, Any]]) -> None:
 def main(argv: Optional[Sequence[str]] = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--seeds", default="0:100", help="train seeds as START:STOP (default 0:100)")
-    parser.add_argument("--tasks", default="all", help="comma-separated task names, or 'all'")
+    parser.add_argument("--tasks", default="surprise",
+                        help="comma-separated pharma task names, or 'surprise' (the three tasks whose products "
+                             "and days are drawn per seed; the default)")
     parser.add_argument("--states", choices=STATES, default="mixed")
     parser.add_argument("--quiet-share", type=float, default=QUIET_SHARE,
                         help="share of days without insights to keep (default %(default)s)")
-    parser.add_argument("--fixed-scenario", action="store_true", help="the fixed tasks instead of random scenarios")
     parser.add_argument("--out", type=Path, default=ROOT / "data" / "teacher_adjust.jsonl")
     args = parser.parse_args(argv)
     try:
         start, stop = (int(x) for x in args.seeds.split(":"))
     except ValueError:
         parser.error("--seeds must look like 0:100")
-    tasks = sorted(TASK_REGISTRY) if args.tasks == "all" else [t.strip() for t in args.tasks.split(",")]
-    unknown = [t for t in tasks if t not in TASK_REGISTRY]
+    tasks = list(SURPRISE_TASKS) if args.tasks == "surprise" else [t.strip() for t in args.tasks.split(",")]
+    unknown = [t for t in tasks if t not in PHARMA_TASKS]
     if unknown:
-        parser.error(f"unknown task(s) {unknown}; choose from {sorted(TASK_REGISTRY)}")
+        parser.error(f"unknown task(s) {unknown}; choose from {list(PHARMA_TASKS)}")
     try:
-        rows = sft_examples(tasks, range(start, stop), scenario="fixed" if args.fixed_scenario else SCENARIO,
+        rows = sft_examples(tasks, range(start, stop),
                             states=args.states, quiet_share=args.quiet_share)
     except ValueError as exc:
         parser.error(str(exc))

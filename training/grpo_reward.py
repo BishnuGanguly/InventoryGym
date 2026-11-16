@@ -38,7 +38,6 @@ FUTURES = 4              # possible futures per prompt, shared by every answer t
 POINTS = 100.0 / HORIZON  # reward units: hundredths of a day's reward, per day
 PENALTY_NO_JSON = -1.0
 PENALTY_OUT_OF_RANGE = -0.25
-SCENARIO = "random"
 INSIGHTS = True
 # Who can play the days around the scored answer: the baseline, or the teacher
 # (training/teacher.py: the insights plan answering in the `adjust` format).
@@ -55,7 +54,6 @@ class DayPrompt:
     task: str
     seed: int
     day: int
-    scenario: str = SCENARIO
     insights: bool = INSIGHTS
     states: str = "baseline"    # who played the earlier days (one of PLAYERS)
 
@@ -80,7 +78,7 @@ def build_state(prompt: DayPrompt) -> Tuple[InventoryEnvironment, InventoryState
     have (as in eval.run_episode). Deterministic: the same prompt always gives the same state.
     """
     env = InventoryEnvironment()
-    obs = env.reset(task_name=prompt.task, seed=prompt.seed, insights=prompt.insights, scenario=prompt.scenario)
+    obs = env.reset(task_name=prompt.task, seed=prompt.seed, insights=prompt.insights)
     agent, history = player(prompt.states, env), []
     while obs.current_date < prompt.day:
         if obs.done:
@@ -104,7 +102,6 @@ def prompt_messages(prompt: DayPrompt) -> List[Dict[str, str]]:
 def insights_day_prompts(
     tasks: Iterable[str],
     seeds: Iterable[int],
-    scenario: str = SCENARIO,
     insights: bool = INSIGHTS,
     states: str = "baseline",
 ) -> List[DayPrompt]:
@@ -116,11 +113,11 @@ def insights_day_prompts(
     for task in tasks:
         for seed in seeds:
             env = InventoryEnvironment()
-            obs = env.reset(task_name=task, seed=seed, insights=insights, scenario=scenario)
+            obs = env.reset(task_name=task, seed=seed, insights=insights)
             agent = player(states, env)
             while not obs.done:
                 if obs.insights:
-                    prompts.append(DayPrompt(task, seed, obs.current_date, scenario, insights, states))
+                    prompts.append(DayPrompt(task, seed, obs.current_date, insights, states))
                 obs = env.step(InventoryAction(message=agent.act(obs, [])[0]))
     return prompts
 
@@ -149,7 +146,7 @@ def parse_answer(obs: InventoryState, text: str) -> Tuple[Dict[str, float], floa
 
 def future_rng(prompt: DayPrompt, index: int) -> Random:
     """Future `index` of a prompt: the same for every answer to that prompt."""
-    return Random(f"future|{prompt.task}|{prompt.seed}|{prompt.day}|{prompt.scenario}|{prompt.insights}|{index}")
+    return Random(f"future|{prompt.task}|{prompt.seed}|{prompt.day}|{prompt.insights}|{index}")
 
 
 def play_forward(env: InventoryEnvironment, obs: InventoryState, extra: Dict[str, float], horizon: int = HORIZON,
@@ -216,11 +213,10 @@ class GRPOReward:
 
     @staticmethod
     def prompts_of(task: Sequence[str], seed: Sequence[int], day: Sequence[int],
-                   scenario: Optional[Sequence[str]] = None, insights: Optional[Sequence[int]] = None,
+                   insights: Optional[Sequence[int]] = None,
                    states: Optional[Sequence[str]] = None) -> List[DayPrompt]:
         """The DayPrompt of each row, from the dataset columns TRL passes to a reward function."""
         return [DayPrompt(task[i], int(seed[i]), int(day[i]),
-                          scenario[i] if scenario is not None else SCENARIO,
                           bool(insights[i]) if insights is not None else INSIGHTS,
                           states[i] if states is not None else "baseline")
                 for i in range(len(task))]
@@ -234,10 +230,10 @@ class GRPOReward:
                 "penalty": penalty, "extra_days": extra}
 
     def __call__(self, completions: Sequence[Any], task: Sequence[str], seed: Sequence[int],
-                 day: Sequence[int], scenario: Optional[Sequence[str]] = None,
+                 day: Sequence[int],
                  insights: Optional[Sequence[int]] = None, states: Optional[Sequence[str]] = None,
                  **_: Any) -> List[float]:
-        prompts = self.prompts_of(task, seed, day, scenario, insights, states)
+        prompts = self.prompts_of(task, seed, day, insights, states)
         return [self.score_answer(prompt, completion_text(completion))["reward"]
                 for prompt, completion in zip(prompts, completions)]
 

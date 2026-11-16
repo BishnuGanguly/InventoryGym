@@ -50,7 +50,6 @@ reset_parameters:
   task_name: "A task of the world (default world: the tasks listed below)."
   world: "A built-in world name or a world as JSON; never a file path."
   insights: "0 no insights (default), 1 exact wording, 2 natural wording."
-  scenario: "fixed (default) or random; built-in pharma world only."
   episode_config: "A full EpisodeConfig (JSON); overrides task_name."
 
 endpoints:
@@ -81,6 +80,22 @@ tasks:
       Hydroxychloroquine demand has two waves (day 17, and a larger one at
       day 45) with a supplier delay on days 17-27; insulin sees a mild rise
       and a delay around days 20-30.
+    duration_days: 60
+  - id: surprise_delays
+    description: >
+      Flat demand; two different products, drawn per seed, each have a supplier
+      delay, the first starting on day 10-20 and the second on day 26-45.
+      14 days of storage instead of 21.
+    duration_days: 60
+  - id: surprise_outbreak
+    description: >
+      A demand wave hits one product drawn per seed, peaking on day 30-38,
+      while its supplier slows down around the peak. 14 days of storage.
+    duration_days: 60
+  - id: surprise_epidemic
+    description: >
+      Two demand waves for one product drawn per seed, with supplier delays,
+      and a mild rise and a delay for a second product. 14 days of storage.
     duration_days: 60
 
 scoring:
